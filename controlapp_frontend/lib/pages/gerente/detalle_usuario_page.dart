@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/model/usuario_model.dart';
 import 'package:flutter_application_1/service/theme.dart';
+import 'package:flutter_application_1/utils/enums/hoja_vida_etiquetas.dart';
 import 'package:flutter_application_1/widgets/password_dialogs.dart';
 import 'package:intl/intl.dart';
 
@@ -216,9 +217,29 @@ class DetalleUsuarioPage extends StatelessWidget {
                   "Fondo pensiones",
                   _prettyEnum(usuario.fondoPensiones),
                 ),
+                _rowDato("ARL", etiquetaArl(usuario.arl)),
+                _rowDato(
+                  "Caja de compensación",
+                  etiquetaCajaCompensacion(usuario.cajaCompensacion),
+                ),
                 _rowDato("Talla camisa", _prettyEnum(usuario.tallaCamisa)),
                 _rowDato("Talla pantalón", _prettyEnum(usuario.tallaPantalon)),
                 _rowDato("Talla calzado", _prettyEnum(usuario.tallaCalzado)),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            // ───────── CONTACTO DE EMERGENCIA ─────────
+            _cardSeccion(
+              titulo: "Contacto de emergencia",
+              children: [
+                _rowDato("Nombre", usuario.contactoEmergenciaNombre ?? ""),
+                _rowDato(
+                  "Parentesco",
+                  usuario.contactoEmergenciaParentesco ?? "",
+                ),
+                _rowDato("Teléfono", usuario.contactoEmergenciaTelefono ?? ""),
               ],
             ),
 

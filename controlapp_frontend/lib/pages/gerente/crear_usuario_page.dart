@@ -15,6 +15,7 @@ import '../../utils/enums/usuario_enums_service.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
 import 'package:flutter_application_1/widgets/searchable_select_field.dart';
+import 'package:flutter_application_1/widgets/usuario/hoja_vida_campos.dart';
 
 class CrearUsuarioPage extends StatefulWidget {
   final String nit;
@@ -45,6 +46,9 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
   final _cedulaCtrl = TextEditingController();
   final _direccionCtrl = TextEditingController();
   final _observacionesOperarioCtrl = TextEditingController();
+  final _contactoNombreCtrl = TextEditingController();
+  final _contactoParentescoCtrl = TextEditingController();
+  final _contactoTelefonoCtrl = TextEditingController();
 
   // 🔹 Variables generales usuario
   String? rolSeleccionado; // Rol (enum backend)
@@ -53,7 +57,7 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
   bool padresVivos = true;
   int numeroHijos = 0;
 
-  String? tipoSangre, eps, fondo, tipoContrato, jornada;
+  String? tipoSangre, eps, fondo, arl, cajaCompensacion, tipoContrato, jornada;
   String? tallaCamisa, tallaPantalon, tallaCalzado;
 
   // ✅ NUEVO
@@ -95,6 +99,9 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
     _cedulaCtrl.dispose();
     _direccionCtrl.dispose();
     _observacionesOperarioCtrl.dispose();
+    _contactoNombreCtrl.dispose();
+    _contactoParentescoCtrl.dispose();
+    _contactoTelefonoCtrl.dispose();
     super.dispose();
   }
 
@@ -209,10 +216,15 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
       tipoSangre: tipoSangre,
       eps: eps,
       fondoPensiones: fondo,
+      arl: arl,
+      cajaCompensacion: cajaCompensacion,
       tallaCamisa: tallaCamisa,
       tallaPantalon: tallaPantalon,
       tallaCalzado: tallaCalzado,
       tipoContrato: tipoContrato,
+      contactoEmergenciaNombre: textoOpcional(_contactoNombreCtrl),
+      contactoEmergenciaParentesco: textoOpcional(_contactoParentescoCtrl),
+      contactoEmergenciaTelefono: textoOpcional(_contactoTelefonoCtrl),
       jornadaLaboral: jornada,
 
       // ✅ NUEVO
@@ -742,9 +754,27 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                           border: OutlineInputBorder(),
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      ArlCajaCampos(
+                        opcionesArl: enums.arl,
+                        opcionesCaja: enums.cajasCompensacion,
+                        arl: arl,
+                        cajaCompensacion: cajaCompensacion,
+                        onArl: (v) => setState(() => arl = v),
+                        onCajaCompensacion: (v) =>
+                            setState(() => cajaCompensacion = v),
+                      ),
                     ],
                   ),
                 ),
+              ),
+
+              const SizedBox(height: 12),
+
+              ContactoEmergenciaCard(
+                nombreCtrl: _contactoNombreCtrl,
+                parentescoCtrl: _contactoParentescoCtrl,
+                telefonoCtrl: _contactoTelefonoCtrl,
               ),
 
               const SizedBox(height: 12),
@@ -1170,4 +1200,3 @@ class _PatronJornadaHelpCard extends StatelessWidget {
     );
   }
 }
-

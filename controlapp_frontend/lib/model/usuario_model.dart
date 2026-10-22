@@ -24,10 +24,15 @@ class Usuario {
   final String? tipoSangre;
   final String? eps;
   final String? fondoPensiones;
+  final String? arl;
+  final String? cajaCompensacion;
   final String? tallaCamisa;
   final String? tallaPantalon;
   final String? tallaCalzado;
   final String? tipoContrato;
+  final String? contactoEmergenciaNombre;
+  final String? contactoEmergenciaParentesco;
+  final String? contactoEmergenciaTelefono;
   final String? jornadaLaboral;
   final List<String>? tipoFunciones;
   final bool activo;
@@ -50,10 +55,15 @@ class Usuario {
     this.tipoSangre,
     this.eps,
     this.fondoPensiones,
+    this.arl,
+    this.cajaCompensacion,
     this.tallaCamisa,
     this.tallaPantalon,
     this.tallaCalzado,
     this.tipoContrato,
+    this.contactoEmergenciaNombre,
+    this.contactoEmergenciaParentesco,
+    this.contactoEmergenciaTelefono,
     this.jornadaLaboral,
     this.tipoFunciones,
     this.activo = true,
@@ -79,10 +89,15 @@ class Usuario {
       tipoSangre: json['tipoSangre'],
       eps: json['eps'],
       fondoPensiones: json['fondoPensiones'],
+      arl: json['arl'],
+      cajaCompensacion: json['cajaCompensacion'],
       tallaCamisa: json['tallaCamisa'],
       tallaPantalon: json['tallaPantalon'],
       tallaCalzado: json['tallaCalzado'],
       tipoContrato: json['tipoContrato'],
+      contactoEmergenciaNombre: json['contactoEmergenciaNombre'],
+      contactoEmergenciaParentesco: json['contactoEmergenciaParentesco'],
+      contactoEmergenciaTelefono: json['contactoEmergenciaTelefono'],
       jornadaLaboral: json['jornadaLaboral'],
       // El backend expone las funciones del operario anidadas bajo
       // `operario.funciones` (usuarioPublicSelect / obtenerConjunto en
@@ -126,10 +141,15 @@ class Usuario {
       'tipoSangre': tipoSangre,
       'eps': eps,
       'fondoPensiones': fondoPensiones,
+      'arl': arl,
+      'cajaCompensacion': cajaCompensacion,
       'tallaCamisa': tallaCamisa,
       'tallaPantalon': tallaPantalon,
       'tallaCalzado': tallaCalzado,
       'tipoContrato': tipoContrato,
+      'contactoEmergenciaNombre': contactoEmergenciaNombre,
+      'contactoEmergenciaParentesco': contactoEmergenciaParentesco,
+      'contactoEmergenciaTelefono': contactoEmergenciaTelefono,
       'jornadaLaboral': jornadaLaboral,
       'activo': activo,
       'patronJornada': patronJornada,

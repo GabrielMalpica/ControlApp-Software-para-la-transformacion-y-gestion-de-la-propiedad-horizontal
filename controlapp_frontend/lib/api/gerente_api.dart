@@ -7,8 +7,10 @@ import 'package:http/http.dart' as http;
 
 import '../model/conjunto_excel_model.dart';
 import '../model/conjunto_model.dart';
+import '../model/planilla_usuario_model.dart';
 import '../model/usuario_model.dart';
 import '../service/api_client.dart';
+import '../service/api_exception.dart';
 import '../service/app_constants.dart';
 import '../service/app_error.dart';
 import '../service/session_service.dart';
@@ -303,6 +305,29 @@ class GerenteApi {
 
     final List<dynamic> jsonList = jsonDecode(resp.body);
     return jsonList.map((e) => Usuario.fromJson(e)).toList();
+  }
+
+  /// Planilla de personal (vista de tabla): todos los datos de cada usuario
+  /// y sus vacaciones. Con [conjuntoId], solo los de ese conjunto.
+  Future<List<PlanillaUsuario>> planillaUsuarios({String? conjuntoId}) async {
+    final query = conjuntoId == null
+        ? ''
+        : '?conjuntoId=${Uri.encodeQueryComponent(conjuntoId)}';
+    final resp = await _apiClient.get(
+      '${AppConstants.usuarios}/planilla$query',
+    );
+    if (resp.statusCode != 200) {
+      throw ApiException.fromResponse(
+        statusCode: resp.statusCode,
+        body: resp.body,
+        fallback: 'No se pudieron cargar los datos del personal.',
+      );
+    }
+    final data = jsonDecode(resp.body);
+    return (data is List ? data : const [])
+        .whereType<Map>()
+        .map((e) => PlanillaUsuario.fromJson(e.cast<String, dynamic>()))
+        .toList();
   }
 
   Future<List<Usuario>> listarSupervisores() async {

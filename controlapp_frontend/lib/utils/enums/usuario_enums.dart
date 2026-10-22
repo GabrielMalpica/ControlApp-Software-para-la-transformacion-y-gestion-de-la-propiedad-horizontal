@@ -3,6 +3,8 @@ class UsuarioEnums {
   final List<String> estadosCiviles;
   final List<String> eps;
   final List<String> fondosPensiones;
+  final List<String> arl;
+  final List<String> cajasCompensacion;
   final List<String> jornadasLaborales;
   final List<String> tiposSangre;
   final List<String> tallasCamisa;
@@ -17,6 +19,8 @@ class UsuarioEnums {
     required this.estadosCiviles,
     required this.eps,
     required this.fondosPensiones,
+    this.arl = const [],
+    this.cajasCompensacion = const [],
     required this.jornadasLaborales,
     required this.tiposSangre,
     required this.tallasCamisa,
@@ -39,6 +43,8 @@ class UsuarioEnums {
       estadosCiviles: listOfStrings(json['estadoCivil']),
       eps: listOfStrings(json['eps']),
       fondosPensiones: listOfStrings(json['fondoPensiones']),
+      arl: listOfStrings(json['arl']),
+      cajasCompensacion: listOfStrings(json['cajaCompensacion']),
       jornadasLaborales: listOfStrings(json['jornadaLaboral']),
       tiposSangre: listOfStrings(json['tipoSangre']),
       tallasCamisa: listOfStrings(json['tallaCamisa']),

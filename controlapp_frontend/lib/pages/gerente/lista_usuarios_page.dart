@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import '../../api/gerente_api.dart';
 import '../../model/conjunto_model.dart';
+import '../../model/planilla_usuario_model.dart';
 import '../../model/usuario_model.dart';
 import '../../repositories/usuario_repository.dart';
 import '../../service/theme.dart';
+import '../../widgets/planilla/tabla_planilla.dart';
 import '../../widgets/searchable_select_field.dart';
 import 'crear_usuario_page.dart';
 import 'editar_usuario_page.dart';
@@ -37,6 +39,13 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
   String _busqueda = '';
   Conjunto? _filtroConjunto;
   bool _hasChanges = false;
+
+  // Vista de tabla tipo Excel (planilla con todos los datos). Se carga la
+  // primera vez que se abre y se recarga cuando cambian los usuarios.
+  bool _vistaTabla = false;
+  List<PlanillaUsuario>? _planilla;
+  bool _cargandoPlanilla = false;
+  String? _errorPlanilla;
 
   // Roles disponibles (los mismos del enum del back)
   final List<String> _rolesDisponibles = [
@@ -76,7 +85,9 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
       setState(() {
         _usuarios = lista;
         _conjuntos = conjuntos;
+        _planilla = null;
       });
+      if (_vistaTabla) _cargarPlanilla();
     } catch (e) {
       setState(() {
         _error = AppError.messageOf(e);
@@ -86,6 +97,38 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
         _cargando = false;
       });
     }
+  }
+
+  Future<void> _cargarPlanilla() async {
+    if (_cargandoPlanilla) return;
+    setState(() {
+      _cargandoPlanilla = true;
+      _errorPlanilla = null;
+    });
+    try {
+      final planilla = await _gerenteApi.planillaUsuarios();
+      if (!mounted) return;
+      setState(() => _planilla = planilla);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _errorPlanilla = AppError.messageOf(e));
+    } finally {
+      if (mounted) setState(() => _cargandoPlanilla = false);
+    }
+  }
+
+  void _cambiarVista(bool tabla) {
+    setState(() => _vistaTabla = tabla);
+    if (tabla && _planilla == null) _cargarPlanilla();
+  }
+
+  /// Filas de la planilla con los mismos filtros de rol, conjunto y búsqueda
+  /// de la lista.
+  List<PlanillaUsuario> get _planillaFiltrada {
+    final cedulas = _usuariosFiltrados.map((u) => u.cedula).toSet();
+    return (_planilla ?? const <PlanillaUsuario>[])
+        .where((p) => cedulas.contains(p.cedula))
+        .toList();
   }
 
   // Filtra en memoria por rol
@@ -216,7 +259,9 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
         AppFeedback.showFromSnackBar(
           context,
           const SnackBar(
-            content: Text('No hay otro supervisor activo para recibir las tareas.'),
+            content: Text(
+              'No hay otro supervisor activo para recibir las tareas.',
+            ),
           ),
         );
         return null;
@@ -297,104 +342,194 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
           label: const Text("Nuevo usuario"),
           onPressed: _irACrearUsuario,
         ),
-        body: Padding(
-          padding: const EdgeInsets.all(12),
+        body: _vistaTabla
+            ? _cuerpoTabla()
+            : Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  children: [
+                    _selectorVista(),
+                    const SizedBox(height: 8),
+                    ..._filtros(),
+                    const SizedBox(height: 8),
+                    Expanded(child: _cuerpo()),
+                  ],
+                ),
+              ),
+      ),
+    );
+  }
+
+  Widget _selectorVista() {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: SegmentedButton<bool>(
+        segments: const [
+          ButtonSegment(
+            value: false,
+            icon: Icon(Icons.view_list_rounded),
+            label: Text('Lista'),
+          ),
+          ButtonSegment(
+            value: true,
+            icon: Icon(Icons.table_chart_outlined),
+            label: Text('Tabla (todos los datos)'),
+          ),
+        ],
+        selected: {_vistaTabla},
+        showSelectedIcon: false,
+        onSelectionChanged: (s) => _cambiarVista(s.first),
+      ),
+    );
+  }
+
+  /// Vista de tabla: un solo scroll para filtros y tabla (la fila de títulos
+  /// queda fija arriba) y el texto de las celdas se puede seleccionar.
+  Widget _cuerpoTabla() {
+    final Widget contenido;
+    if (_cargando || (_cargandoPlanilla && _planilla == null)) {
+      contenido = const SliverToBoxAdapter(child: SkeletonList());
+    } else if (_error != null || _errorPlanilla != null) {
+      contenido = SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
           child: Column(
             children: [
-              Card(
-                elevation: 1,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
+              Text(
+                'No se pudieron cargar los datos del personal:\n'
+                '${_error ?? _errorPlanilla}',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _error != null ? _cargarUsuarios : _cargarPlanilla,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Intentar de nuevo'),
+              ),
+            ],
+          ),
+        ),
+      );
+    } else {
+      contenido = TablaPlanillaSliver(
+        filas: _planillaFiltrada,
+        contexto: 'general',
+        textoVacio: 'No hay usuarios para el filtro seleccionado.',
+      );
+    }
+
+    return SelectionArea(
+      child: CustomScrollView(
+        slivers: [
+          SliverPadding(
+            // Abajo deja espacio para el botón "Nuevo usuario".
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
+            sliver: SliverMainAxisGroup(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: SelectionContainer.disabled(
+                    child: Column(
+                      children: [
+                        _selectorVista(),
+                        const SizedBox(height: 8),
+                        ..._filtros(),
+                        const SizedBox(height: 12),
+                      ],
+                    ),
                   ),
+                ),
+                contenido,
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _filtros() {
+    return [
+      Card(
+        elevation: 1,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              const Icon(Icons.filter_list),
+              const SizedBox(width: 8),
+              const Text(
+                "Filtrar por rol:",
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
                   child: Row(
-                    children: [
-                      const Icon(Icons.filter_list),
-                      const SizedBox(width: 8),
-                      const Text(
-                        "Filtrar por rol:",
-                        style: TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children: _rolesDisponibles.map((rol) {
-                              final seleccionado = _filtroRol == rol;
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                ),
-                                child: ChoiceChip(
-                                  label: Text(
-                                    rol == 'todos' ? "Todos" : _prettyRol(rol),
-                                  ),
-                                  selected: seleccionado,
-                                  onSelected: (_) {
-                                    setState(() {
-                                      _filtroRol = rol;
-                                    });
-                                  },
-                                ),
-                              );
-                            }).toList(),
+                    children: _rolesDisponibles.map((rol) {
+                      final seleccionado = _filtroRol == rol;
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: ChoiceChip(
+                          label: Text(
+                            rol == 'todos' ? "Todos" : _prettyRol(rol),
                           ),
+                          selected: seleccionado,
+                          onSelected: (_) {
+                            setState(() {
+                              _filtroRol = rol;
+                            });
+                          },
                         ),
-                      ),
-                    ],
+                      );
+                    }).toList(),
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
-              SearchableSelectField<Conjunto>(
-                label: 'Filtrar por conjunto',
-                value: _filtroConjunto,
-                prefixIcon: const Icon(Icons.apartment_rounded),
-                searchHint: 'Buscar conjunto o NIT',
-                clearLabel: 'Todos los conjuntos',
-                options: _conjuntos
-                    .map(
-                      (conjunto) => SearchableSelectOption<Conjunto>(
-                        value: conjunto,
-                        label: conjunto.nombre,
-                        subtitle: 'NIT: ${conjunto.nit}',
-                      ),
-                    )
-                    .toList(),
-                onChanged: (value) => setState(() => _filtroConjunto = value),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _busquedaCtrl,
-                decoration: InputDecoration(
-                  labelText: 'Buscar usuario',
-                  hintText: 'Nombre, cédula, correo o rol',
-                  prefixIcon: const Icon(Icons.search),
-                  border: const OutlineInputBorder(),
-                  suffixIcon: _busqueda.trim().isEmpty
-                      ? null
-                      : IconButton(
-                          onPressed: () {
-                            _busquedaCtrl.clear();
-                            setState(() => _busqueda = '');
-                          },
-                          icon: const Icon(Icons.clear),
-                        ),
-                ),
-                onChanged: (value) => setState(() => _busqueda = value),
-              ),
-              const SizedBox(height: 8),
-              Expanded(child: _cuerpo()),
             ],
           ),
         ),
       ),
-    );
+      const SizedBox(height: 8),
+      SearchableSelectField<Conjunto>(
+        label: 'Filtrar por conjunto',
+        value: _filtroConjunto,
+        prefixIcon: const Icon(Icons.apartment_rounded),
+        searchHint: 'Buscar conjunto o NIT',
+        clearLabel: 'Todos los conjuntos',
+        options: _conjuntos
+            .map(
+              (conjunto) => SearchableSelectOption<Conjunto>(
+                value: conjunto,
+                label: conjunto.nombre,
+                subtitle: 'NIT: ${conjunto.nit}',
+              ),
+            )
+            .toList(),
+        onChanged: (value) => setState(() => _filtroConjunto = value),
+      ),
+      const SizedBox(height: 8),
+      TextField(
+        controller: _busquedaCtrl,
+        decoration: InputDecoration(
+          labelText: 'Buscar usuario',
+          hintText: 'Nombre, cédula, correo o rol',
+          prefixIcon: const Icon(Icons.search),
+          border: const OutlineInputBorder(),
+          suffixIcon: _busqueda.trim().isEmpty
+              ? null
+              : IconButton(
+                  onPressed: () {
+                    _busquedaCtrl.clear();
+                    setState(() => _busqueda = '');
+                  },
+                  icon: const Icon(Icons.clear),
+                ),
+        ),
+        onChanged: (value) => setState(() => _busqueda = value),
+      ),
+    ];
   }
 
   Widget _cuerpo() {

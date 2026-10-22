@@ -1,1551 +1,1120 @@
-import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart'
+    show Canvas, Color, Colors, IconData, Icons, Offset, TextDirection;
+import 'package:flutter/painting.dart' as painting;
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 
-import 'pdf_download.dart';
+import 'package:flutter_application_1/pdf/pdf_actions.dart';
+import 'package:flutter_application_1/utils/cronograma/hoja_impresion.dart';
 
-class _TareaLite {
-  final String descripcion;
-  final DateTime fechaInicio;
-  final DateTime fechaFin;
-  final String? ubicacionNombre;
-  final String? elementoNombre;
-
-  _TareaLite({
-    required this.descripcion,
-    required this.fechaInicio,
-    required this.fechaFin,
-    this.ubicacionNombre,
-    this.elementoNombre,
-  });
-
-  factory _TareaLite.fromJson(Map<String, dynamic> json) {
-    final fi = DateTime.parse(json['fechaInicio'].toString()).toLocal();
-    final ff = DateTime.parse(json['fechaFin'].toString()).toLocal();
-
-    String? ubic;
-    String? elem;
-
-    if (json['ubicacionNombre'] != null) {
-      ubic = json['ubicacionNombre']?.toString();
-    } else if (json['ubicacion'] is Map) {
-      ubic = (json['ubicacion'] as Map)['nombre']?.toString();
-    }
-
-    if (json['elementoNombre'] != null) {
-      elem = json['elementoNombre']?.toString();
-    } else if (json['elemento'] is Map) {
-      elem = (json['elemento'] as Map)['nombre']?.toString();
-    }
-
-    return _TareaLite(
-      descripcion: (json['descripcion'] ?? '').toString(),
-      fechaInicio: fi,
-      fechaFin: ff,
-      ubicacionNombre: ubic,
-      elementoNombre: elem,
-    );
-  }
+/// Genera el PDF del cronograma (portada + hojas por operario, ver
+/// [construirPlanImpresion]) y lo descarga (web) o abre el diálogo de
+/// impresión.
+Future<void> imprimirCronograma(PlanImpresion plan) async {
+  final bytes = await generarPdfCronograma(plan);
+  await openOrDownloadPdf(bytes, plan.nombreArchivo);
 }
 
-class _HorarioLite {
-  final String dia;
-  final int aperturaMin;
-  final int cierreMin;
-  final int? descansoInicioMin;
-  final int? descansoFinMin;
-
-  const _HorarioLite({
-    required this.dia,
-    required this.aperturaMin,
-    required this.cierreMin,
-    this.descansoInicioMin,
-    this.descansoFinMin,
-  });
-
-  int? get weekday => _weekdayDesdeDiaHorario(dia);
-
-  static _HorarioLite? tryParse(Map<String, dynamic> json) {
-    final dia = (json['dia'] ?? json['day'] ?? '').toString().trim();
-    final aperturaRaw = _parseHoraMin(
-      json['horaApertura'] ?? json['horaInicio'] ?? json['apertura'],
-    );
-    final cierreRaw = _parseHoraMin(
-      json['horaCierre'] ?? json['horaFin'] ?? json['cierre'],
-    );
-
-    if (aperturaRaw == null || cierreRaw == null) {
-      return null;
-    }
-
-    final apertura = aperturaRaw;
-    final cierre = _ajustarHoraPosterior(aperturaRaw, cierreRaw);
-
-    if (dia.isEmpty || cierre <= apertura) {
-      return null;
-    }
-
-    final descansoInicioRaw = _parseHoraMin(json['descansoInicio']);
-    final descansoFinRaw = _parseHoraMin(json['descansoFin']);
-    final descansoInicio = descansoInicioRaw == null
-        ? null
-        : _ajustarHoraPosterior(apertura, descansoInicioRaw);
-    final descansoFin = descansoFinRaw == null || descansoInicio == null
-        ? null
-        : _ajustarHoraPosterior(descansoInicio, descansoFinRaw);
-    final tieneDescanso =
-        descansoInicio != null &&
-        descansoFin != null &&
-        descansoFin > descansoInicio;
-
-    return _HorarioLite(
-      dia: dia,
-      aperturaMin: apertura,
-      cierreMin: cierre,
-      descansoInicioMin: tieneDescanso ? descansoInicio : null,
-      descansoFinMin: tieneDescanso ? descansoFin : null,
-    );
-  }
-}
-
-int _ajustarHoraPosterior(int referenciaMin, int candidatoMin) {
-  var ajustado = candidatoMin;
-  while (ajustado <= referenciaMin && ajustado + (12 * 60) <= (24 * 60)) {
-    ajustado += 12 * 60;
-  }
-  return ajustado;
-}
-
-class _GridHorarioConfig {
-  final int inicioMin;
-  final int finMin;
-  final int? descansoInicioMin;
-  final int? descansoFinMin;
-
-  const _GridHorarioConfig({
-    required this.inicioMin,
-    required this.finMin,
-    this.descansoInicioMin,
-    this.descansoFinMin,
-  });
-}
-
-class _TaskSpan {
-  final _TareaLite tarea;
-  final int dayIndex;
-  final int startMin;
-  final int endMin;
-
-  const _TaskSpan({
-    required this.tarea,
-    required this.dayIndex,
-    required this.startMin,
-    required this.endMin,
-  });
-}
-
-class _TaskPlacement {
-  final _TareaLite tarea;
-  final int dayIndex;
-  final int startMin;
-  final int endMin;
-  final int column;
-  final int columnCount;
-
-  const _TaskPlacement({
-    required this.tarea,
-    required this.dayIndex,
-    required this.startMin,
-    required this.endMin,
-    required this.column,
-    required this.columnCount,
-  });
-}
-
-class _AgendaBlockLite {
-  final int startMin;
-  final int endMin;
-  final _TareaLite? tarea;
-
-  const _AgendaBlockLite.task(this.tarea, this.startMin, this.endMin)
-    : assert(tarea != null);
-
-  const _AgendaBlockLite.gap({required this.startMin, required this.endMin})
-    : tarea = null;
-
-  bool get isGap => tarea == null;
-}
-
-class _DayAgendaLite {
-  final DateTime dia;
-  final bool esFestivo;
-  final bool esFueraDePeriodo;
-  final bool esMesAnterior;
-  final String? festivoNombre;
-  final List<_AgendaBlockLite> bloques;
-
-  const _DayAgendaLite({
-    required this.dia,
-    required this.esFestivo,
-    required this.esFueraDePeriodo,
-    required this.esMesAnterior,
-    required this.festivoNombre,
-    required this.bloques,
-  });
-}
-
-Future<void> imprimirCronogramaOperario(Map<String, dynamic> data) async {
-  final fontRegular = pw.Font.ttf(
+Future<Uint8List> generarPdfCronograma(
+  PlanImpresion plan, {
+  DateTime? generado,
+}) async {
+  final regular = pw.Font.ttf(
     await rootBundle.load('assets/fonts/Roboto-Regular.ttf'),
   );
-  final fontBold = pw.Font.ttf(
+  final negrita = pw.Font.ttf(
     await rootBundle.load('assets/fonts/Roboto-Bold.ttf'),
   );
-  final logoBytes = await _loadCronogramaLogoBytes();
-  final logoImage = pw.MemoryImage(logoBytes);
-
-  final doc = pw.Document();
-
-  final operario = (data['operarioNombre'] ?? data['operarioId'] ?? '')
-      .toString();
-  final conjunto = (data['conjuntoNombre'] ?? data['conjuntoId'] ?? '')
-      .toString();
-
-  final anio = (data['anio'] is int)
-      ? data['anio'] as int
-      : int.tryParse('${data['anio']}') ?? DateTime.now().year;
-
-  final mes = (data['mes'] is int)
-      ? data['mes'] as int
-      : int.tryParse('${data['mes']}') ?? DateTime.now().month;
-
-  final alcance = (data['alcance'] ?? 'SEMANA').toString().toUpperCase();
-
-  final semanaDelMes = (data['semanaDelMes'] is int)
-      ? data['semanaDelMes'] as int
-      : int.tryParse('${data['semanaDelMes']}') ?? 1;
-
-  final weekStart =
-      _parseYmd((data['weekStart'] ?? '').toString()) ?? DateTime(anio, mes, 1);
-
-  final mesAnioTxt = DateFormat(
-    'MMMM yyyy',
-    'es',
-  ).format(DateTime(anio, mes, 1));
-  final filename = _safeFileName(
-    alcance == 'MES'
-        ? 'Cronograma $mesAnioTxt - $operario.pdf'
-        : 'Cronograma $mesAnioTxt - Semana $semanaDelMes - $operario.pdf',
+  final logo = pw.MemoryImage(
+    (await rootBundle.load('assets/logo.png')).buffer.asUint8List(),
   );
 
-  final tareasRaw = (data['tareas'] as List? ?? const []);
+  final iconos = _Iconos();
+  await iconos.preparar(_iconosDelPlan(plan));
 
-  final tareas =
-      tareasRaw
-          .map((e) => (e as Map).cast<String, dynamic>())
-          .map(_TareaLite.fromJson)
-          .toList()
-        ..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
-  final horarios = ((data['horariosConjunto'] as List?) ?? const [])
-      .map(
-        (e) =>
-            e is Map ? _HorarioLite.tryParse(e.cast<String, dynamic>()) : null,
-      )
-      .whereType<_HorarioLite>()
-      .toList();
-  final festivos = ((data['festivos'] as List?) ?? const [])
-      .map((e) => e.toString())
-      .toSet();
-  final festivoNombrePorYmd =
-      ((data['festivoNombrePorYmd'] as Map?) ?? const <dynamic, dynamic>{}).map(
-        (key, value) => MapEntry(key.toString(), value.toString()),
-      );
+  final r = _Recursos(
+    logo: logo,
+    iconos: iconos,
+    generado: generado ?? DateTime.now(),
+  );
+  final doc = pw.Document(
+    title: plan.nombreArchivo.replaceAll('.pdf', ''),
+    author: 'ControlApp',
+    theme: pw.ThemeData.withFont(base: regular, bold: negrita),
+  );
+  const formato = PdfPageFormat(
+    MedidasHoja.ancho,
+    MedidasHoja.alto,
+    marginAll: 0,
+  );
 
-  final theme = pw.ThemeData.withFont(base: fontRegular, bold: fontBold);
-  final weekStarts = alcance == 'MES'
-      ? _weekStartsForMonth(anio, mes)
-      : <DateTime>[weekStart];
-
-  for (var i = 0; i < weekStarts.length; i++) {
-    final currentWeekStart = weekStarts[i];
-    final currentWeekEnd = currentWeekStart.add(const Duration(days: 6));
-    final weekNumber = alcance == 'MES' ? i + 1 : semanaDelMes;
-    final tareasSemana = tareas.where((t) {
-      final fecha = DateTime(
-        t.fechaInicio.year,
-        t.fechaInicio.month,
-        t.fechaInicio.day,
-      );
-      return !fecha.isBefore(currentWeekStart) &&
-          !fecha.isAfter(currentWeekEnd);
-    }).toList();
-    final agendaSemanal = _buildWeekAgenda(
-      tareas: tareasSemana,
-      horarios: horarios,
-      weekStart: currentWeekStart,
-      periodoAnio: anio,
-      periodoMes: mes,
-      festivos: festivos,
-      festivoNombrePorYmd: festivoNombrePorYmd,
-    );
-    final pageCount = _weeklyPageCount(agendaSemanal);
-
-    for (var pageIndex = 0; pageIndex < pageCount; pageIndex++) {
-      final isLastPage = pageIndex == pageCount - 1;
-      doc.addPage(
-        pw.Page(
-          pageFormat: PdfPageFormat.a4.landscape,
-          margin: const pw.EdgeInsets.fromLTRB(8, 6, 8, 8),
-          theme: theme,
-          build: (context) => _buildWeeklyCronogramaPage(
-            logoImage: logoImage,
-            conjunto: conjunto,
-            operario: operario,
-            mesAnioTxt: mesAnioTxt,
-            periodoAnio: anio,
-            periodoMes: mes,
-            alcance: alcance,
-            semanaDelMes: weekNumber,
-            weekStart: currentWeekStart,
-            weekEnd: currentWeekEnd,
-            agendaSemanal: agendaSemanal,
-            pageIndex: pageIndex,
-            totalPages: pageCount,
-            showSignature: isLastPage,
+  final portada = plan.portada;
+  if (portada != null) {
+    doc.addPage(
+      pw.MultiPage(
+        pageTheme: pw.PageTheme(
+          pageFormat: formato,
+          margin: const pw.EdgeInsets.fromLTRB(
+            MedidasHoja.margen,
+            MedidasHoja.franjaSuperior + MedidasHoja.espacioSuperior,
+            MedidasHoja.margen,
+            MedidasHoja.margen,
+          ),
+          buildBackground: (_) => pw.FullPage(
+            ignoreMargins: true,
+            child: pw.Align(
+              alignment: pw.Alignment.topCenter,
+              child: pw.Container(
+                height: MedidasHoja.franjaSuperior,
+                color: _c(ColoresHoja.marca),
+              ),
+            ),
           ),
         ),
-      );
+        build: (_) => _portada(portada, r),
+      ),
+    );
+  }
+
+  for (final hoja in plan.hojas) {
+    doc.addPage(
+      pw.Page(pageFormat: formato, build: (ctx) => _hoja(hoja, ctx, r)),
+    );
+  }
+  return doc.save();
+}
+
+/* ============================== Recursos ============================== */
+
+PdfColor _c(Color c) => PdfColor(c.r, c.g, c.b);
+
+class _Recursos {
+  final pw.MemoryImage logo;
+  final _Iconos iconos;
+  final DateTime generado;
+
+  const _Recursos({
+    required this.logo,
+    required this.iconos,
+    required this.generado,
+  });
+
+  String get generadoTexto =>
+      '${generado.day.toString().padLeft(2, '0')}/${generado.month.toString().padLeft(2, '0')}/${generado.year}';
+}
+
+/// Íconos de la app (los mismos de la pantalla) dibujados por Flutter como
+/// imagen: la fuente de íconos de Flutter es CFF y el paquete pdf no la lee.
+class _Iconos {
+  static const double _px = 72;
+  final _cache = <String, pw.MemoryImage>{};
+
+  static String _clave(IconData i, Color c) =>
+      '${i.fontFamily}-${i.codePoint}-${c.toARGB32()}';
+
+  Future<void> preparar(Iterable<(IconData, Color)> pares) async {
+    for (final (icono, color) in pares) {
+      final k = _clave(icono, color);
+      if (_cache.containsKey(k)) continue;
+      try {
+        _cache[k] = pw.MemoryImage(await _rasterizar(icono, color));
+      } catch (_) {
+        // Sin el ícono la hoja sigue siendo legible (texto y colores).
+      }
     }
   }
 
-  final Uint8List bytes = await doc.save();
+  static Future<Uint8List> _rasterizar(IconData icono, Color color) async {
+    final grabadora = ui.PictureRecorder();
+    final canvas = Canvas(grabadora);
+    final texto = painting.TextPainter(textDirection: TextDirection.ltr)
+      ..text = painting.TextSpan(
+        text: String.fromCharCode(icono.codePoint),
+        style: painting.TextStyle(
+          fontFamily: icono.fontFamily,
+          package: icono.fontPackage,
+          fontSize: _px,
+          height: 1,
+          color: color,
+        ),
+      )
+      ..layout();
+    texto.paint(
+      canvas,
+      Offset((_px - texto.width) / 2, (_px - texto.height) / 2),
+    );
+    final imagen = await grabadora.endRecording().toImage(
+      _px.toInt(),
+      _px.toInt(),
+    );
+    final datos = await imagen.toByteData(format: ui.ImageByteFormat.png);
+    imagen.dispose();
+    return datos!.buffer.asUint8List();
+  }
 
-  if (kIsWeb) {
-    await downloadPdfWeb(bytes, filename);
-  } else {
-    await Printing.layoutPdf(name: filename, onLayout: (_) async => bytes);
+  pw.Widget call(IconData icono, Color color, double tam) {
+    final img = _cache[_clave(icono, color)];
+    if (img == null) return pw.SizedBox(width: tam, height: tam);
+    return pw.Image(img, width: tam, height: tam);
   }
 }
 
-List<DateTime> _weekStartsForMonth(int year, int month) {
-  final firstDay = DateTime(year, month, 1);
-  final lastDay = DateTime(year, month + 1, 0);
-  final firstWeekStart = firstDay.subtract(
-    Duration(days: firstDay.weekday - 1),
+Iterable<(IconData, Color)> _iconosDelPlan(PlanImpresion plan) sync* {
+  yield (Icons.check, Colors.white);
+  yield (Icons.close, Colors.white);
+  yield (Icons.group, ColoresHoja.textoSuave);
+  yield (Icons.north, ColoresHoja.textoSuave);
+  yield (Icons.south, ColoresHoja.textoSuave);
+  final portada = plan.portada;
+  if (portada != null) {
+    for (final c in portada.categorias) {
+      yield (c.visual.icono, Colors.white);
+    }
+    for (final o in portada.operarios) {
+      for (final v in o.categorias) {
+        yield (v.icono, v.acento);
+      }
+    }
+  }
+  for (final h in plan.hojas) {
+    for (final v in h.operario.categorias) {
+      yield (v.icono, v.acento);
+    }
+    for (final t in h.tarjetas) {
+      yield (t.visual.icono, t.visual.acento);
+    }
+  }
+}
+
+pw.TextStyle _estilo(
+  double tam, {
+  bool negrita = false,
+  Color color = ColoresHoja.texto,
+  double? espaciado,
+}) => pw.TextStyle(
+  fontSize: tam,
+  fontWeight: negrita ? pw.FontWeight.bold : pw.FontWeight.normal,
+  color: _c(color),
+  letterSpacing: espaciado,
+  lineSpacing: 0,
+);
+
+pw.Widget _avatar(OperarioImpresion o, double tam) => pw.Container(
+  width: tam,
+  height: tam,
+  alignment: pw.Alignment.center,
+  decoration: pw.BoxDecoration(
+    color: _c(o.color),
+    borderRadius: pw.BorderRadius.circular(tam * 0.2),
+  ),
+  child: pw.Text(
+    o.inicial,
+    style: _estilo(
+      tam * 0.55,
+      negrita: true,
+      color: ColoresHoja.textoSobre(o.color),
+    ),
+  ),
+);
+
+pw.Widget _casilla(MarcaCierre marca, double tam, _Recursos r) {
+  switch (marca) {
+    case MarcaCierre.pendiente:
+      return pw.Container(
+        width: tam,
+        height: tam,
+        decoration: pw.BoxDecoration(
+          color: PdfColors.white,
+          border: pw.Border.all(color: _c(ColoresHoja.casilla), width: 0.7),
+          borderRadius: pw.BorderRadius.circular(1.4),
+        ),
+      );
+    case MarcaCierre.hecha:
+    case MarcaCierre.noHecha:
+      final hecha = marca == MarcaCierre.hecha;
+      return pw.Container(
+        width: tam,
+        height: tam,
+        alignment: pw.Alignment.center,
+        decoration: pw.BoxDecoration(
+          color: _c(hecha ? ColoresHoja.hecha : ColoresHoja.noHecha),
+          borderRadius: pw.BorderRadius.circular(1.4),
+        ),
+        child: r.iconos(
+          hecha ? Icons.check : Icons.close,
+          Colors.white,
+          tam * 0.9,
+        ),
+      );
+  }
+}
+
+/// Fondo con rayas diagonales (días fuera del mes y descanso).
+pw.Widget _rayado(double ancho, double alto, Color fondo, Color raya) {
+  return pw.CustomPaint(
+    size: PdfPoint(ancho, alto),
+    painter: (canvas, size) {
+      canvas
+        ..setFillColor(_c(fondo))
+        ..drawRect(0, 0, size.x, size.y)
+        ..fillPath()
+        ..saveContext()
+        ..drawRect(0, 0, size.x, size.y)
+        ..clipPath()
+        ..setStrokeColor(_c(raya))
+        ..setLineWidth(1.1);
+      for (var x = -size.y; x < size.x; x += 7) {
+        canvas
+          ..moveTo(x, 0)
+          ..lineTo(x + size.y, size.y);
+      }
+      canvas
+        ..strokePath()
+        ..restoreContext();
+    },
   );
-  final out = <DateTime>[];
-
-  for (
-    var current = firstWeekStart;
-    !current.isAfter(lastDay);
-    current = current.add(const Duration(days: 7))
-  ) {
-    out.add(DateTime(current.year, current.month, current.day));
-  }
-
-  return out;
 }
 
-pw.Widget _buildWeeklyCronogramaPage({
-  required pw.MemoryImage logoImage,
-  required String conjunto,
-  required String operario,
-  required String mesAnioTxt,
-  required int periodoAnio,
-  required int periodoMes,
-  required String alcance,
-  required int semanaDelMes,
-  required DateTime weekStart,
-  required DateTime weekEnd,
-  required List<_DayAgendaLite> agendaSemanal,
-  required int pageIndex,
-  required int totalPages,
-  required bool showSignature,
-}) {
+/* =============================== Hoja =============================== */
+
+pw.Widget _hoja(HojaCronograma h, pw.Context ctx, _Recursos r) {
   return pw.Column(
     crossAxisAlignment: pw.CrossAxisAlignment.start,
     children: [
-      _buildCronogramaHeader(
-        logoImage: logoImage,
-        conjunto: conjunto,
-        operario: operario,
-        mesAnioTxt: mesAnioTxt,
-        alcance: alcance,
-        semanaDelMes: semanaDelMes,
-        weekStart: weekStart,
-        weekEnd: weekEnd,
-        pageIndex: pageIndex,
-        totalPages: totalPages,
+      pw.Container(
+        height: MedidasHoja.franjaSuperior,
+        color: _c(ColoresHoja.marca),
       ),
-      pw.SizedBox(height: 4),
-      pw.Expanded(
-        child: _buildPreviewLikePdf(
-          agendaSemanal: agendaSemanal,
-          pageIndex: pageIndex,
+      pw.Padding(
+        padding: const pw.EdgeInsets.fromLTRB(
+          MedidasHoja.margen,
+          MedidasHoja.espacioSuperior,
+          MedidasHoja.margen,
+          0,
+        ),
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.SizedBox(
+              height: MedidasHoja.encabezado,
+              child: _encabezado(h, r),
+            ),
+            pw.SizedBox(height: MedidasHoja.separacion),
+            pw.SizedBox(
+              height: MedidasHoja.titulosDias,
+              child: _titulosDias(h),
+            ),
+            pw.SizedBox(height: MedidasHoja.altoGrilla, child: _grilla(h, r)),
+            pw.SizedBox(height: MedidasHoja.separacion),
+            pw.SizedBox(
+              height: MedidasHoja.pie,
+              child: _pie(h, ctx.pageNumber, ctx.pagesCount, r),
+            ),
+          ],
         ),
       ),
-      if (showSignature) ...[pw.SizedBox(height: 6), _buildSignatureRow()],
     ],
   );
 }
 
-pw.Widget _buildCronogramaHeader({
-  required pw.MemoryImage logoImage,
-  required String conjunto,
-  required String operario,
-  required String mesAnioTxt,
-  required String alcance,
-  required int semanaDelMes,
-  required DateTime weekStart,
-  required DateTime weekEnd,
-  required int pageIndex,
-  required int totalPages,
-}) {
-  final rangoSemana =
-      '${DateFormat('dd/MM').format(weekStart)} - ${DateFormat('dd/MM').format(weekEnd)}';
-  final subtitulo = alcance == 'MES'
-      ? 'Cronograma mensual - Semana $semanaDelMes ($rangoSemana)'
-      : 'Cronograma de $mesAnioTxt - Semana $semanaDelMes';
+pw.Widget _encabezado(HojaCronograma h, _Recursos r) {
+  final o = h.operario;
+  return pw.Row(
+    crossAxisAlignment: pw.CrossAxisAlignment.center,
+    children: [
+      pw.SizedBox(
+        width: 96,
+        height: 42,
+        child: pw.Image(r.logo, fit: pw.BoxFit.contain),
+      ),
+      pw.SizedBox(width: 16),
+      pw.Expanded(
+        child: pw.Column(
+          mainAxisAlignment: pw.MainAxisAlignment.center,
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(
+              h.etiquetaSuperior,
+              maxLines: 1,
+              style: _estilo(
+                7.8,
+                negrita: true,
+                color: ColoresHoja.marca,
+                espaciado: 0.8,
+              ),
+            ),
+            pw.SizedBox(height: 4),
+            pw.Row(
+              children: [
+                _avatar(o, 22),
+                pw.SizedBox(width: 7),
+                pw.Flexible(
+                  child: pw.Text(
+                    o.ref.nombre,
+                    maxLines: 1,
+                    style: _estilo(16, negrita: true, color: ColoresHoja.tinta),
+                  ),
+                ),
+                for (final v in o.iconos.take(5)) ...[
+                  pw.SizedBox(width: 6),
+                  r.iconos(v.icono, v.acento, 11),
+                ],
+              ],
+            ),
+            if (o.subtitulo.isNotEmpty)
+              pw.Padding(
+                padding: const pw.EdgeInsets.only(left: 29, top: 1),
+                child: pw.Text(
+                  o.subtitulo,
+                  maxLines: 1,
+                  style: _estilo(8.4, color: ColoresHoja.textoSuave),
+                ),
+              ),
+          ],
+        ),
+      ),
+      pw.SizedBox(width: 12),
+      pw.Column(
+        mainAxisAlignment: pw.MainAxisAlignment.center,
+        crossAxisAlignment: pw.CrossAxisAlignment.end,
+        children: [
+          pw.Text(
+            'Programado en la semana',
+            style: _estilo(7.8, color: ColoresHoja.textoSuave),
+          ),
+          pw.Text(
+            h.programadoTexto,
+            style: _estilo(17, negrita: true, color: ColoresHoja.tinta),
+          ),
+          if (h.parteTexto.isNotEmpty) ...[
+            pw.SizedBox(height: 3),
+            pw.Container(
+              padding: const pw.EdgeInsets.symmetric(
+                horizontal: 6,
+                vertical: 2,
+              ),
+              decoration: pw.BoxDecoration(
+                color: _c(ColoresHoja.aclarar(ColoresHoja.marca, 0.88)),
+                borderRadius: pw.BorderRadius.circular(6),
+              ),
+              child: pw.Text(
+                h.parteTexto,
+                style: _estilo(7, negrita: true, color: ColoresHoja.tinta),
+              ),
+            ),
+          ],
+        ],
+      ),
+    ],
+  );
+}
+
+pw.Widget _titulosDias(HojaCronograma h) {
+  return pw.Row(
+    crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+    children: [
+      pw.Container(
+        width: MedidasHoja.anchoHoras,
+        alignment: pw.Alignment.bottomLeft,
+        padding: const pw.EdgeInsets.only(bottom: 3),
+        child: pw.Text(
+          'Hora',
+          style: _estilo(6.8, color: ColoresHoja.textoSuave),
+        ),
+      ),
+      for (final d in h.dias)
+        pw.Container(
+          width: d.ancho,
+          padding: const pw.EdgeInsets.only(right: 1),
+          child: pw.Container(
+            alignment: pw.Alignment.center,
+            decoration: pw.BoxDecoration(
+              color: _c(
+                d.fueraDelMes
+                    ? ColoresHoja.fueraMes
+                    : (d.festivo ? ColoresHoja.festivo : ColoresHoja.cabecera),
+              ),
+              borderRadius: const pw.BorderRadius.only(
+                topLeft: pw.Radius.circular(4),
+                topRight: pw.Radius.circular(4),
+              ),
+            ),
+            child: pw.Column(
+              mainAxisAlignment: pw.MainAxisAlignment.center,
+              children: [
+                pw.Text(
+                  d.nombreCorto,
+                  style: _estilo(
+                    6.6,
+                    negrita: true,
+                    color: d.fueraDelMes
+                        ? Colors.white
+                        : ColoresHoja.aclarar(ColoresHoja.cabecera, 0.7),
+                    espaciado: 0.6,
+                  ),
+                ),
+                pw.Text(
+                  '${d.fecha.day}',
+                  style: _estilo(13, negrita: true, color: Colors.white),
+                ),
+              ],
+            ),
+          ),
+        ),
+    ],
+  );
+}
+
+pw.Widget _grilla(HojaCronograma h, _Recursos r) {
+  const alto = MedidasHoja.altoGrilla;
+  const ancho = MedidasHoja.anchoGrilla;
+  return pw.Row(
+    crossAxisAlignment: pw.CrossAxisAlignment.start,
+    children: [
+      pw.SizedBox(
+        width: MedidasHoja.anchoHoras,
+        height: alto,
+        child: pw.Stack(
+          overflow: pw.Overflow.visible,
+          children: [
+            for (final l in h.lineas.where((l) => l.principal))
+              pw.Positioned(
+                top: (l.y - 4).clamp(0, alto - 8).toDouble(),
+                right: 5,
+                child: pw.Text(
+                  l.texto!,
+                  style: _estilo(6.8, color: ColoresHoja.textoSuave),
+                ),
+              ),
+          ],
+        ),
+      ),
+      pw.Container(
+        width: ancho,
+        height: alto,
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: _c(ColoresHoja.borde), width: 0.7),
+        ),
+        child: pw.Stack(
+          children: [
+            for (final d in h.dias)
+              pw.Positioned(
+                left: d.x,
+                top: 0,
+                child: d.fueraDelMes
+                    ? _rayado(
+                        d.ancho,
+                        alto,
+                        ColoresHoja.fondoSuave,
+                        ColoresHoja.rayado,
+                      )
+                    : pw.Container(
+                        width: d.ancho,
+                        height: alto,
+                        color: d.festivo
+                            ? _c(ColoresHoja.festivoFondo)
+                            : PdfColors.white,
+                      ),
+              ),
+            for (final l in h.lineas)
+              pw.Positioned(
+                left: 0,
+                top: l.y,
+                child: pw.Container(
+                  width: ancho,
+                  height: l.principal ? 0.6 : 0.4,
+                  color: _c(
+                    l.principal ? ColoresHoja.linea : ColoresHoja.lineaMedia,
+                  ),
+                ),
+              ),
+            for (final d in h.dias.skip(1))
+              pw.Positioned(
+                left: d.x,
+                top: 0,
+                child: pw.Container(
+                  width: 0.6,
+                  height: alto,
+                  color: _c(ColoresHoja.borde),
+                ),
+              ),
+            for (final f in h.franjas)
+              pw.Positioned(left: f.x, top: f.y, child: _franja(f)),
+            for (final t in h.tarjetas)
+              pw.Positioned(left: t.x, top: t.y, child: _tarjeta(t, r)),
+            for (final d in h.dias)
+              if (d.aviso != null)
+                pw.Positioned(
+                  left: d.x + 4,
+                  top: 6,
+                  child: pw.Container(
+                    width: d.ancho - 8,
+                    alignment: pw.Alignment.center,
+                    padding: const pw.EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 3,
+                    ),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColors.white,
+                      borderRadius: pw.BorderRadius.circular(4),
+                      border: pw.Border.all(
+                        color: _c(
+                          d.fueraDelMes
+                              ? ColoresHoja.fueraMes
+                              : ColoresHoja.festivo,
+                        ),
+                        width: 0.6,
+                      ),
+                    ),
+                    child: pw.Text(
+                      d.aviso!,
+                      textAlign: pw.TextAlign.center,
+                      maxLines: 2,
+                      style: _estilo(
+                        6.8,
+                        negrita: true,
+                        color: d.fueraDelMes
+                            ? ColoresHoja.textoSuave
+                            : ColoresHoja.festivo,
+                      ),
+                    ),
+                  ),
+                ),
+          ],
+        ),
+      ),
+    ],
+  );
+}
+
+pw.Widget _franja(FranjaHoja f) {
+  final texto = f.alto >= 9
+      ? pw.Text(
+          f.texto,
+          maxLines: 1,
+          style: _estilo(
+            6.2,
+            negrita: f.tipo == TipoFranja.libre,
+            color: f.tipo == TipoFranja.libre
+                ? ColoresHoja.libreTexto
+                : ColoresHoja.textoSuave,
+          ),
+        )
+      : null;
+  if (f.tipo == TipoFranja.descanso) {
+    return pw.SizedBox(
+      width: f.ancho,
+      height: f.alto,
+      child: pw.Stack(
+        alignment: pw.Alignment.center,
+        children: [
+          _rayado(
+            f.ancho,
+            f.alto,
+            ColoresHoja.descansoFondo,
+            ColoresHoja.rayado,
+          ),
+          if (texto != null)
+            pw.Container(
+              color: _c(ColoresHoja.descansoFondo),
+              padding: const pw.EdgeInsets.symmetric(horizontal: 3),
+              child: texto,
+            ),
+        ],
+      ),
+    );
+  }
+  return pw.Container(
+    width: f.ancho,
+    height: f.alto,
+    padding: const pw.EdgeInsets.symmetric(horizontal: 4),
+    alignment: f.alto >= 18 ? pw.Alignment.topLeft : pw.Alignment.centerLeft,
+    decoration: pw.BoxDecoration(
+      color: _c(ColoresHoja.libreFondo),
+      border: pw.Border.all(color: _c(ColoresHoja.libreBorde), width: 0.6),
+      borderRadius: pw.BorderRadius.circular(3),
+    ),
+    child: f.alto >= 18
+        ? pw.Padding(padding: const pw.EdgeInsets.only(top: 3), child: texto)
+        : texto,
+  );
+}
+
+pw.Widget _tarjeta(TarjetaHoja t, _Recursos r) {
+  final v = t.visual;
+  final pw.Widget contenido;
+
+  switch (t.tamano) {
+    case TamanoTarjeta.grande:
+      final lineasDetalle = t.lineasDetalle;
+      contenido = pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.SizedBox(
+            height: TextosHoja.filaHora,
+            child: pw.Row(
+              children: [
+                r.iconos(v.icono, v.acento, 8.5),
+                pw.SizedBox(width: 2.5),
+                if (t.continuaAntes) ...[
+                  r.iconos(Icons.north, ColoresHoja.textoSuave, 6.5),
+                  pw.SizedBox(width: 1),
+                ],
+                pw.Expanded(
+                  child: pw.Text(
+                    t.rango,
+                    maxLines: 1,
+                    style: _estilo(
+                      TextosHoja.hora,
+                      negrita: true,
+                      color: ColoresHoja.tinta,
+                    ),
+                  ),
+                ),
+                if (t.personas > 1) ...[
+                  r.iconos(Icons.group, ColoresHoja.textoSuave, 7.5),
+                  pw.Text('${t.personas}', style: _estilo(6.4, negrita: true)),
+                  pw.SizedBox(width: 2.5),
+                ],
+                _casilla(t.marca, 8, r),
+              ],
+            ),
+          ),
+          pw.SizedBox(height: TextosHoja.separacionFila),
+          pw.Text(
+            t.titulo,
+            maxLines: t.lineasTitulo,
+            overflow: pw.TextOverflow.clip,
+            style: _estilo(
+              TextosHoja.titulo,
+              negrita: true,
+              color: ColoresHoja.tinta,
+            ),
+          ),
+          if (lineasDetalle > 0)
+            pw.Text(
+              t.detalle,
+              maxLines: lineasDetalle,
+              overflow: pw.TextOverflow.clip,
+              style: _estilo(TextosHoja.detalle, color: ColoresHoja.textoSuave),
+            ),
+          if (t.continuaDespues) ...[
+            pw.Spacer(),
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.end,
+              children: [
+                pw.Text(
+                  'sigue ',
+                  style: _estilo(5.8, color: ColoresHoja.textoSuave),
+                ),
+                r.iconos(Icons.south, ColoresHoja.textoSuave, 6),
+              ],
+            ),
+          ],
+        ],
+      );
+    case TamanoTarjeta.mediana:
+      contenido = pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        mainAxisAlignment: pw.MainAxisAlignment.center,
+        children: [
+          pw.Row(
+            children: [
+              r.iconos(v.icono, v.acento, 8),
+              pw.SizedBox(width: 2.5),
+              pw.Expanded(
+                child: pw.Text(
+                  t.rango,
+                  maxLines: 1,
+                  style: _estilo(6.9, negrita: true, color: ColoresHoja.tinta),
+                ),
+              ),
+              _casilla(t.marca, 7.5, r),
+            ],
+          ),
+          pw.SizedBox(height: 1),
+          pw.Text(
+            t.titulo,
+            maxLines: 1,
+            overflow: pw.TextOverflow.clip,
+            style: _estilo(6.9, negrita: true, color: ColoresHoja.tinta),
+          ),
+        ],
+      );
+    case TamanoTarjeta.chica:
+      final diminuta = t.alto < 10;
+      contenido = pw.Row(
+        children: [
+          r.iconos(v.icono, v.acento, diminuta ? 5.5 : 7),
+          pw.SizedBox(width: 2),
+          pw.Expanded(
+            child: pw.RichText(
+              maxLines: 1,
+              overflow: pw.TextOverflow.clip,
+              text: pw.TextSpan(
+                children: [
+                  pw.TextSpan(
+                    text: '${t.horaInicio}  ',
+                    style: _estilo(
+                      diminuta ? 5.4 : 6.5,
+                      negrita: true,
+                      color: ColoresHoja.tinta,
+                    ),
+                  ),
+                  pw.TextSpan(
+                    text: t.titulo,
+                    style: _estilo(
+                      diminuta ? 5.4 : 6.5,
+                      color: ColoresHoja.tinta,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          pw.SizedBox(width: 1.5),
+          _casilla(t.marca, diminuta ? 5.5 : 7, r),
+        ],
+      );
+  }
 
   return pw.Container(
-    margin: const pw.EdgeInsets.only(bottom: 4),
-    padding: const pw.EdgeInsets.only(bottom: 4),
-    decoration: const pw.BoxDecoration(
+    width: t.ancho,
+    height: t.alto,
+    decoration: pw.BoxDecoration(
+      color: _c(v.fondo),
       border: pw.Border(
-        bottom: pw.BorderSide(color: PdfColors.grey400, width: 0.8),
+        left: pw.BorderSide(color: _c(v.acento), width: TextosHoja.barra),
+        top: pw.BorderSide(
+          color: _c(ColoresHoja.aclarar(v.acento, 0.55)),
+          width: 0.5,
+        ),
+        right: pw.BorderSide(
+          color: _c(ColoresHoja.aclarar(v.acento, 0.55)),
+          width: 0.5,
+        ),
+        bottom: pw.BorderSide(
+          color: _c(ColoresHoja.aclarar(v.acento, 0.55)),
+          width: 0.5,
+        ),
       ),
     ),
-    child: pw.Row(
+    padding: pw.EdgeInsets.symmetric(
+      horizontal: TextosHoja.padH,
+      vertical: t.tamano == TamanoTarjeta.chica ? 0.5 : TextosHoja.padV,
+    ),
+    child: pw.ClipRect(child: contenido),
+  );
+}
+
+pw.Widget _leyendaItem(pw.Widget marca, String texto) => pw.Row(
+  mainAxisSize: pw.MainAxisSize.min,
+  children: [
+    marca,
+    pw.SizedBox(width: 3),
+    pw.Text(texto, style: _estilo(6.8)),
+  ],
+);
+
+pw.Widget _pie(HojaCronograma h, int pagina, int paginas, _Recursos r) {
+  pw.Widget firma(String texto) => pw.Expanded(
+    child: pw.Column(
+      mainAxisAlignment: pw.MainAxisAlignment.end,
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
+        pw.Container(height: 0.7, color: _c(ColoresHoja.texto)),
+        pw.SizedBox(height: 2),
+        pw.Text(texto, style: _estilo(6.6, color: ColoresHoja.textoSuave)),
+      ],
+    ),
+  );
+
+  return pw.Row(
+    crossAxisAlignment: pw.CrossAxisAlignment.end,
+    children: [
+      pw.Expanded(
+        child: pw.Column(
+          mainAxisAlignment: pw.MainAxisAlignment.end,
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Wrap(
+              spacing: 10,
+              runSpacing: 3,
+              crossAxisAlignment: pw.WrapCrossAlignment.center,
+              children: [
+                for (final v in h.categorias)
+                  _leyendaItem(r.iconos(v.icono, v.acento, 8), v.nombre),
+                _leyendaItem(
+                  _casilla(MarcaCierre.pendiente, 7, r),
+                  'Marcar al terminar',
+                ),
+                _leyendaItem(_casilla(MarcaCierre.hecha, 7, r), 'Terminada'),
+                if (h.hayNoHechas)
+                  _leyendaItem(
+                    _casilla(MarcaCierre.noHecha, 7, r),
+                    'No se hizo',
+                  ),
+                if (h.hayLibres)
+                  _leyendaItem(
+                    pw.Container(
+                      width: 11,
+                      height: 7,
+                      decoration: pw.BoxDecoration(
+                        color: _c(ColoresHoja.libreFondo),
+                        border: pw.Border.all(
+                          color: _c(ColoresHoja.libreBorde),
+                          width: 0.6,
+                        ),
+                      ),
+                    ),
+                    'Libre: espacio para actividades especiales',
+                  ),
+                if (h.hayCompartidas)
+                  _leyendaItem(
+                    r.iconos(Icons.group, ColoresHoja.textoSuave, 8),
+                    'Compartida',
+                  ),
+              ],
+            ),
+            pw.SizedBox(height: 3),
+            pw.Text(
+              'Generado el ${r.generadoTexto} · ControlApp',
+              style: _estilo(6, color: ColoresHoja.textoSuave),
+            ),
+          ],
+        ),
+      ),
+      if (h.ultimaParte) ...[
+        pw.SizedBox(width: 16),
+        pw.SizedBox(
+          width: 280,
+          height: MedidasHoja.pie,
+          child: pw.Row(
+            children: [
+              firma('Firma de quien recibe'),
+              pw.SizedBox(width: 16),
+              firma('Firma de quien entrega'),
+            ],
+          ),
+        ),
+      ],
+      pw.SizedBox(width: 12),
+      pw.Text(
+        'Página $pagina de $paginas',
+        style: _estilo(6.6, color: ColoresHoja.textoSuave),
+      ),
+    ],
+  );
+}
+
+/* ============================== Portada ============================== */
+
+pw.Widget _tituloSeccion(String texto) => pw.Padding(
+  padding: const pw.EdgeInsets.only(bottom: 6),
+  child: pw.Text(
+    texto,
+    style: _estilo(12.5, negrita: true, color: ColoresHoja.tinta),
+  ),
+);
+
+pw.BoxDecoration get _tarjetaPortada => pw.BoxDecoration(
+  color: PdfColors.white,
+  borderRadius: pw.BorderRadius.circular(8),
+  border: pw.Border.all(color: _c(ColoresHoja.borde), width: 0.8),
+);
+
+pw.Widget _categoriaPortada(CategoriaResumen c, _Recursos r) => pw.Container(
+  height: 32,
+  margin: const pw.EdgeInsets.only(bottom: 6),
+  padding: const pw.EdgeInsets.symmetric(horizontal: 9),
+  decoration: _tarjetaPortada,
+  child: pw.Row(
+    children: [
+      pw.Container(
+        width: 20,
+        height: 20,
+        alignment: pw.Alignment.center,
+        decoration: pw.BoxDecoration(
+          color: _c(c.visual.acento),
+          shape: pw.BoxShape.circle,
+        ),
+        child: r.iconos(c.visual.icono, Colors.white, 11.5),
+      ),
+      pw.SizedBox(width: 9),
+      pw.Expanded(
+        child: pw.Text(
+          c.visual.nombre,
+          maxLines: 1,
+          style: _estilo(9.5, negrita: true, color: ColoresHoja.tinta),
+        ),
+      ),
+      pw.Text(
+        '${c.actividades} ${c.actividades == 1 ? 'actividad' : 'actividades'} · ${duracionTexto(c.minutos)}',
+        style: _estilo(7.4, color: ColoresHoja.textoSuave),
+      ),
+    ],
+  ),
+);
+
+pw.Widget _puestoPortada(PuestoImpresion p) => pw.Container(
+  height: 32,
+  margin: const pw.EdgeInsets.only(bottom: 6),
+  padding: const pw.EdgeInsets.symmetric(horizontal: 10),
+  decoration: _tarjetaPortada,
+  child: pw.Column(
+    mainAxisAlignment: pw.MainAxisAlignment.center,
+    crossAxisAlignment: pw.CrossAxisAlignment.start,
+    children: [
+      pw.Text(
+        p.nombre,
+        maxLines: 1,
+        style: _estilo(9.5, negrita: true, color: ColoresHoja.tinta),
+      ),
+      if (p.detalle.isNotEmpty)
+        pw.Text(
+          p.detalle,
+          maxLines: 1,
+          style: _estilo(7.4, color: ColoresHoja.textoSuave),
+        ),
+    ],
+  ),
+);
+
+pw.Widget _operarioPortada(OperarioImpresion o, _Recursos r) => pw.Container(
+  height: 52,
+  padding: const pw.EdgeInsets.symmetric(horizontal: 9),
+  decoration: _tarjetaPortada,
+  child: pw.Row(
+    children: [
+      _avatar(o, 24),
+      pw.SizedBox(width: 9),
+      pw.Expanded(
+        child: pw.Column(
+          mainAxisAlignment: pw.MainAxisAlignment.center,
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(
+              o.ref.nombre,
+              maxLines: 2,
+              style: _estilo(9.2, negrita: true, color: ColoresHoja.tinta),
+            ),
+            if (o.subtitulo.isNotEmpty)
+              pw.Text(
+                o.subtitulo,
+                maxLines: 1,
+                style: _estilo(7.2, color: ColoresHoja.textoSuave),
+              ),
+            pw.Text(
+              '${o.actividades} ${o.actividades == 1 ? 'actividad' : 'actividades'} · ${duracionTexto(o.minutos)}',
+              style: _estilo(7, negrita: true, color: ColoresHoja.marca),
+            ),
+          ],
+        ),
+      ),
+      for (final v in o.iconos.take(4)) ...[
+        pw.SizedBox(width: 4),
+        r.iconos(v.icono, v.acento, 11),
+      ],
+    ],
+  ),
+);
+
+List<pw.Widget> _portada(PortadaCronograma p, _Recursos r) {
+  final filas = p.categorias.length > p.puestos.length
+      ? p.categorias.length
+      : p.puestos.length;
+  final operarios = p.operarios;
+  return [
+    pw.Row(
+      crossAxisAlignment: pw.CrossAxisAlignment.center,
+      children: [
+        pw.SizedBox(
+          width: 112,
+          height: 48,
+          child: pw.Image(r.logo, fit: pw.BoxFit.contain),
+        ),
+        pw.SizedBox(width: 18),
         pw.Expanded(
           child: pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
               pw.Text(
-                conjunto.isEmpty ? 'Sin conjunto' : conjunto,
-                style: pw.TextStyle(
-                  fontSize: 14,
-                  fontWeight: pw.FontWeight.bold,
+                p.etiquetaSuperior,
+                style: _estilo(
+                  9,
+                  negrita: true,
+                  color: ColoresHoja.marca,
+                  espaciado: 1,
                 ),
               ),
-              pw.SizedBox(height: 3),
-              pw.Text(subtitulo, style: const pw.TextStyle(fontSize: 10)),
               pw.SizedBox(height: 3),
               pw.Text(
-                'Operario: $operario',
-                style: const pw.TextStyle(fontSize: 10),
+                'Cronograma de actividades por operario',
+                style: _estilo(22, negrita: true, color: ColoresHoja.tinta),
               ),
-              if (totalPages > 1) ...[
-                pw.SizedBox(height: 2),
+              if (p.semanaTexto.isNotEmpty)
                 pw.Text(
-                  'Parte ${pageIndex + 1} de $totalPages',
-                  style: const pw.TextStyle(fontSize: 9),
+                  p.semanaTexto,
+                  style: _estilo(10, color: ColoresHoja.textoSuave),
                 ),
-              ],
             ],
           ),
-        ),
-        pw.SizedBox(width: 12),
-        pw.SizedBox(
-          height: 42,
-          child: pw.Image(logoImage, fit: pw.BoxFit.contain),
         ),
       ],
     ),
-  );
-}
-
-pw.Widget _buildSignatureRow() {
-  return pw.Row(
-    children: [
-      pw.Expanded(
-        child: pw.Text(
-          'Firma quien recibe: __________________________',
-          style: const pw.TextStyle(fontSize: 10),
-        ),
-      ),
-      pw.SizedBox(width: 20),
-      pw.Expanded(
-        child: pw.Text(
-          'Firma quien entrega: _________________________',
-          style: const pw.TextStyle(fontSize: 10),
-        ),
-      ),
-    ],
-  );
-}
-
-Future<Uint8List> _loadCronogramaLogoBytes() async {
-  final logo = await rootBundle.load('assets/logo_cronograma.png');
-  return logo.buffer.asUint8List();
-}
-
-pw.Widget _buildPreviewLikePdf({
-  required List<_DayAgendaLite> agendaSemanal,
-  required int pageIndex,
-}) {
-  final bloquesMaximosPorDiaSemana = agendaSemanal
-      .map((dia) => dia.bloques.length)
-      .fold<int>(0, math.max);
-  final bloquesTotalesSemana = agendaSemanal.fold<int>(
-    0,
-    (acc, dia) => acc + dia.bloques.length,
-  );
-
-  final sparse = bloquesMaximosPorDiaSemana <= 2 && bloquesTotalesSemana <= 10;
-  final medium =
-      !sparse && bloquesMaximosPorDiaSemana <= 3 && bloquesTotalesSemana <= 16;
-  final veryDense = bloquesMaximosPorDiaSemana >= 6;
-  final compact = !sparse && !medium && bloquesMaximosPorDiaSemana >= 4;
-  final dayPadding =
-      (sparse
-          ? 8.0
-          : (medium ? 6.0 : (veryDense ? 3.0 : (compact ? 4.0 : 6.0)))) *
-      1.38;
-  final taskPadding =
-      (sparse
-          ? 6.0
-          : (medium ? 5.0 : (veryDense ? 2.0 : (compact ? 3.0 : 4.0)))) *
-      1.38;
-  final titleFont =
-      (sparse
-          ? 9.2
-          : (medium ? 8.4 : (veryDense ? 6.4 : (compact ? 7.2 : 8.0)))) *
-      1.38;
-  final bodyFont =
-      (sparse
-          ? 8.2
-          : (medium ? 7.4 : (veryDense ? 5.8 : (compact ? 6.4 : 7.0)))) *
-      1.38;
-  final blockSpacing =
-      (sparse ? 8.0 : (medium ? 6.0 : (veryDense ? 2.0 : 4.0))) * 1.38;
-  final lineSpacing = (sparse ? 2.0 : 1.0) * 1.38;
-
-  return pw.Row(
-    crossAxisAlignment: pw.CrossAxisAlignment.start,
-    children: agendaSemanal.asMap().entries.map((entry) {
-      final diaAgenda = entry.value;
-      final dia = diaAgenda.dia;
-      final esFestivo = diaAgenda.esFestivo;
-      final esFueraDePeriodo = diaAgenda.esFueraDePeriodo;
-      final festivoNombre = diaAgenda.festivoNombre;
-      final bloquesDia = _sliceAgendaBlocks(diaAgenda.bloques, pageIndex);
-
-      return pw.Expanded(
-        child: pw.Container(
-          margin: pw.EdgeInsets.only(
-            right: entry.key == agendaSemanal.length - 1 ? 0 : 8,
+    pw.SizedBox(height: 18),
+    pw.Row(
+      children: [
+        pw.Expanded(child: _tituloSeccion('Categorías de actividad')),
+        pw.SizedBox(width: 18),
+        pw.Expanded(child: _tituloSeccion('Puestos')),
+      ],
+    ),
+    // Una fila por par (categoría, puesto): así la portada puede seguir en
+    // otra página si el conjunto tiene muchas.
+    for (var i = 0; i < filas; i++)
+      pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Expanded(
+            child: i < p.categorias.length
+                ? _categoriaPortada(p.categorias[i], r)
+                : pw.SizedBox(),
           ),
-          padding: pw.EdgeInsets.all(dayPadding),
-          decoration: pw.BoxDecoration(
-            color: esFueraDePeriodo
-                ? PdfColor.fromHex('#FFEBEE')
-                : esFestivo
-                ? PdfColor.fromHex('#FFEBEE')
-                : PdfColors.grey100,
-            borderRadius: pw.BorderRadius.circular(10),
-            border: pw.Border.all(
-              color: esFueraDePeriodo
-                  ? PdfColor.fromHex('#E53935')
-                  : esFestivo
-                  ? PdfColor.fromHex('#E53935')
-                  : PdfColors.grey400,
-              width: 0.8,
-            ),
+          pw.SizedBox(width: 18),
+          pw.Expanded(
+            child: i < p.puestos.length
+                ? _puestoPortada(p.puestos[i])
+                : pw.SizedBox(),
           ),
-          child: pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Text(
-                DateFormat('EEEE dd/MM', 'es').format(dia),
-                style: pw.TextStyle(
-                  fontSize: compact ? 8 : 9,
-                  fontWeight: pw.FontWeight.bold,
-                  color: esFueraDePeriodo || esFestivo
-                      ? PdfColor.fromHex('#B71C1C')
-                      : PdfColors.black,
-                ),
-              ),
-              if (esFueraDePeriodo) ...[
-                pw.SizedBox(height: lineSpacing),
-                pw.Text(
-                  diaAgenda.esMesAnterior
-                      ? 'Día del mes anterior'
-                      : 'Día del mes siguiente',
-                  style: pw.TextStyle(
-                    fontSize: bodyFont,
-                    fontWeight: pw.FontWeight.bold,
-                    color: PdfColor.fromHex('#B71C1C'),
-                  ),
-                ),
-              ] else if (esFestivo) ...[
-                pw.SizedBox(height: lineSpacing),
-                pw.Text(
-                  festivoNombre?.isNotEmpty == true
-                      ? 'Festivo: $festivoNombre'
-                      : 'Festivo - no se programan tareas',
-                  style: pw.TextStyle(
-                    fontSize: bodyFont,
-                    fontWeight: pw.FontWeight.bold,
-                    color: PdfColor.fromHex('#B71C1C'),
-                  ),
-                ),
-              ],
-              pw.SizedBox(height: blockSpacing),
-              if (bloquesDia.isEmpty)
-                pw.Text(
-                  esFestivo ? 'No se programan tareas.' : 'Sin tareas',
-                  style: pw.TextStyle(
-                    fontSize: bodyFont,
-                    color: esFestivo
-                        ? PdfColor.fromHex('#B71C1C')
-                        : PdfColors.grey700,
-                  ),
-                )
-              else
-                ...bloquesDia.map((bloque) {
-                  if (bloque.isGap) {
-                    final duracion = _fmtDuracionRango(
-                      bloque.startMin,
-                      bloque.endMin,
-                    );
-                    return pw.Container(
-                      width: double.infinity,
-                      margin: pw.EdgeInsets.only(bottom: blockSpacing),
-                      padding: pw.EdgeInsets.all(taskPadding),
-                      decoration: pw.BoxDecoration(
-                        color: PdfColor.fromHex('#FFF3E0'),
-                        borderRadius: pw.BorderRadius.circular(8),
-                        border: pw.Border.all(
-                          color: PdfColor.fromHex('#FB8C00'),
-                          width: 0.9,
-                        ),
-                      ),
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text(
-                            'Actividades especiales',
-                            style: pw.TextStyle(
-                              fontSize: sparse ? titleFont : bodyFont - 0.2,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColor.fromHex('#E65100'),
-                            ),
-                          ),
-                          pw.SizedBox(height: lineSpacing),
-                          pw.Text(
-                            '${_fmtHHmmFromMinutes(bloque.startMin)} - ${_fmtHHmmFromMinutes(bloque.endMin)}  |  $duracion',
-                            style: pw.TextStyle(
-                              fontSize: sparse ? bodyFont : bodyFont - 0.3,
-                              color: PdfColor.fromHex('#BF6000'),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-
-                  final t = bloque.tarea!;
-                  final ubic = (t.ubicacionNombre ?? '').trim();
-                  final elem = (t.elementoNombre ?? '').trim();
-
-                  return pw.Container(
-                    width: double.infinity,
-                    margin: pw.EdgeInsets.only(bottom: blockSpacing),
-                    padding: pw.EdgeInsets.all(taskPadding),
-                    decoration: pw.BoxDecoration(
-                      color: _pdfTaskColor(t),
-                      borderRadius: pw.BorderRadius.circular(8),
-                      border: pw.Border.all(
-                        color: _pdfTaskBorderColor(t),
-                        width: 0.8,
-                      ),
-                    ),
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        pw.Text(
-                          t.descripcion.trim().isEmpty
-                              ? 'Sin descripción'
-                              : t.descripcion.trim(),
-                          style: pw.TextStyle(
-                            fontSize: titleFont,
-                            fontWeight: pw.FontWeight.bold,
-                          ),
-                        ),
-                        pw.SizedBox(height: lineSpacing),
-                        pw.Text(
-                          '${DateFormat('HH:mm').format(t.fechaInicio)} - ${DateFormat('HH:mm').format(t.fechaFin)}',
-                          style: pw.TextStyle(fontSize: bodyFont),
-                        ),
-                        if (ubic.isNotEmpty) ...[
-                          pw.SizedBox(height: lineSpacing),
-                          pw.Text(
-                            'Ubicación: $ubic',
-                            style: pw.TextStyle(fontSize: bodyFont),
-                          ),
-                        ],
-                        if (elem.isNotEmpty) ...[
-                          pw.SizedBox(height: lineSpacing),
-                          pw.Text(
-                            'Elemento: $elem',
-                            style: pw.TextStyle(fontSize: bodyFont),
-                          ),
-                        ],
-                      ],
-                    ),
-                  );
-                }),
-            ],
-          ),
-        ),
-      );
-    }).toList(),
-  );
-}
-
-const int _maxAgendaBlocksPerPage = 5;
-
-List<_DayAgendaLite> _buildWeekAgenda({
-  required List<_TareaLite> tareas,
-  required List<_HorarioLite> horarios,
-  required DateTime weekStart,
-  required int periodoAnio,
-  required int periodoMes,
-  required Set<String> festivos,
-  required Map<String, String> festivoNombrePorYmd,
-}) {
-  final dias = List.generate(6, (i) => weekStart.add(Duration(days: i)));
-  return dias.map((dia) {
-    final ymd = _toYmd(dia);
-    final esFestivo = festivos.contains(ymd);
-    final esFueraDePeriodo = dia.year != periodoAnio || dia.month != periodoMes;
-    final tareasDia = tareas.where((t) {
-      final d = t.fechaInicio.toLocal();
-      return d.year == dia.year && d.month == dia.month && d.day == dia.day;
-    }).toList()..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
-
-    return _DayAgendaLite(
-      dia: dia,
-      esFestivo: esFestivo,
-      esFueraDePeriodo: esFueraDePeriodo,
-      esMesAnterior: dia.isBefore(DateTime(periodoAnio, periodoMes, 1)),
-      festivoNombre: festivoNombrePorYmd[ymd]?.trim(),
-      bloques: _buildAgendaBlocksLite(
-        dia: dia,
-        tareasDia: tareasDia,
-        horarios: horarios,
-        esFestivo: esFestivo,
-        esFueraDePeriodo: esFueraDePeriodo,
+        ],
       ),
-    );
-  }).toList();
-}
-
-int _weeklyPageCount(List<_DayAgendaLite> agendaSemanal) {
-  final maxBlocks = agendaSemanal
-      .map((dia) => dia.bloques.length)
-      .fold<int>(0, math.max);
-  return math.max(1, (maxBlocks / _maxAgendaBlocksPerPage).ceil());
-}
-
-List<_AgendaBlockLite> _sliceAgendaBlocks(
-  List<_AgendaBlockLite> bloques,
-  int pageIndex,
-) {
-  final start = pageIndex * _maxAgendaBlocksPerPage;
-  if (start >= bloques.length) return const [];
-  final end = math.min(bloques.length, start + _maxAgendaBlocksPerPage);
-  return bloques.sublist(start, end);
-}
-
-List<_AgendaBlockLite> _buildAgendaBlocksLite({
-  required DateTime dia,
-  required List<_TareaLite> tareasDia,
-  required List<_HorarioLite> horarios,
-  required bool esFestivo,
-  required bool esFueraDePeriodo,
-}) {
-  final bloques = tareasDia
-      .map(
-        (t) => _AgendaBlockLite.task(
-          t,
-          _minutesOfDay(t.fechaInicio),
-          math.max(_minutesOfDay(t.fechaInicio) + 1, _minutesOfDay(t.fechaFin)),
-        ),
-      )
-      .toList();
-
-  if (esFestivo || esFueraDePeriodo) {
-    bloques.sort((a, b) => a.startMin.compareTo(b.startMin));
-    return bloques;
-  }
-
-  _HorarioLite? horario;
-  for (final item in horarios) {
-    if (item.weekday == dia.weekday) {
-      horario = item;
-      break;
-    }
-  }
-  if (horario == null) {
-    bloques.sort((a, b) => a.startMin.compareTo(b.startMin));
-    return bloques;
-  }
-
-  final segmentos = <(int, int)>[
-    (horario.aperturaMin, horario.descansoInicioMin ?? horario.cierreMin),
-    if (horario.descansoInicioMin != null && horario.descansoFinMin != null)
-      (horario.descansoFinMin!, horario.cierreMin),
-  ];
-
-  for (final segmento in segmentos) {
-    final inicio = segmento.$1;
-    final fin = segmento.$2;
-    if (fin <= inicio) continue;
-
-    final tareasSegmento =
-        tareasDia
-            .map(
-              (t) => (
-                t: t,
-                inicio: math.max(_minutesOfDay(t.fechaInicio), inicio),
-                fin: math.min(
-                  math.max(
-                    _minutesOfDay(t.fechaInicio) + 1,
-                    _minutesOfDay(t.fechaFin),
-                  ),
-                  fin,
-                ),
-              ),
-            )
-            .where((item) => item.fin > item.inicio)
-            .toList()
-          ..sort((a, b) => a.inicio.compareTo(b.inicio));
-
-    var cursor = inicio;
-    for (final item in tareasSegmento) {
-      if (item.inicio > cursor) {
-        bloques.add(
-          _AgendaBlockLite.gap(startMin: cursor, endMin: item.inicio),
-        );
-      }
-      cursor = math.max(cursor, item.fin);
-    }
-    if (cursor < fin) {
-      bloques.add(_AgendaBlockLite.gap(startMin: cursor, endMin: fin));
-    }
-  }
-
-  bloques.sort((a, b) => a.startMin.compareTo(b.startMin));
-  return bloques;
-}
-
-String _fmtDuracionRango(int inicioMin, int finMin) {
-  final total = math.max(0, finMin - inicioMin);
-  final horas = total ~/ 60;
-  final minutos = total % 60;
-  if (horas <= 0) return '$minutos min disponibles';
-  if (minutos == 0) return '$horas h disponibles';
-  return '$horas h $minutos min disponibles';
-}
-
-PdfColor _pdfTaskColor(_TareaLite tarea) {
-  final texto = '${tarea.ubicacionNombre ?? ''} ${tarea.elementoNombre ?? ''}'
-      .toLowerCase();
-  if (texto.contains('humed') || texto.contains('agua')) {
-    return PdfColor.fromHex('#E3F2FD');
-  }
-  if (texto.contains('verde') ||
-      texto.contains('jardin') ||
-      texto.contains('cesped')) {
-    return PdfColor.fromHex('#E8F5E9');
-  }
-  if (texto.contains('transit') || texto.contains('circul')) {
-    return PdfColor.fromHex('#FFF3E0');
-  }
-  if (texto.contains('parque') || texto.contains('parqueadero')) {
-    return PdfColor.fromHex('#EFEBE9');
-  }
-  return PdfColor.fromHex('#E8F1FF');
-}
-
-PdfColor _pdfTaskBorderColor(_TareaLite tarea) {
-  final texto = '${tarea.ubicacionNombre ?? ''} ${tarea.elementoNombre ?? ''}'
-      .toLowerCase();
-  if (texto.contains('humed') || texto.contains('agua')) {
-    return PdfColor.fromHex('#90CAF9');
-  }
-  if (texto.contains('verde') ||
-      texto.contains('jardin') ||
-      texto.contains('cesped')) {
-    return PdfColor.fromHex('#81C784');
-  }
-  if (texto.contains('transit') || texto.contains('circul')) {
-    return PdfColor.fromHex('#FFB74D');
-  }
-  if (texto.contains('parque') || texto.contains('parqueadero')) {
-    return PdfColor.fromHex('#A1887F');
-  }
-  return PdfColor.fromHex('#B9D0FF');
-}
-
-// ignore: unused_element
-pw.Widget _buildCalendarGrid({
-  required List<_TareaLite> tareas,
-  required List<String> dayLabels,
-  required int dayCols,
-  required _GridHorarioConfig horario,
-  double? forcedHeight,
-}) {
-  const int stepMin = 30;
-  final int fixedStartMin = horario.inicioMin;
-  final int fixedEndMin = horario.finMin;
-
-  final int steps = math.max(
-    1,
-    ((fixedEndMin - fixedStartMin) / stepMin).ceil(),
-  );
-  final placements = _buildTaskPlacements(
-    tareas: tareas,
-    fixedStartMin: fixedStartMin,
-    fixedEndMin: fixedEndMin,
-    dayCols: dayCols,
-  );
-
-  // Medidas
-  const double timeColW = 40;
-  const double dayHeaderH = 18;
-  const double bottomPad = 16;
-
-  return pw.LayoutBuilder(
-    builder: (context, constraints) {
-      final totalW = constraints!.maxWidth;
-      final gridH = forcedHeight ?? constraints.maxHeight;
-      final usableGridH = gridH <= 0 ? 520.0 : gridH;
-      final coreH = math.max(120.0, usableGridH - bottomPad);
-      final stepH = math.max(18.0, (coreH - dayHeaderH) / steps);
-
-      double yForMin(int minutes) {
-        final clamped = _clampInt(minutes, fixedStartMin, fixedEndMin);
-        final idx = (clamped - fixedStartMin) / stepMin;
-        return dayHeaderH + (idx * stepH);
-      }
-
-      final dayW = (totalW - timeColW) / dayCols;
-
-      return pw.Container(
-        height: usableGridH,
-        child: pw.Stack(
+    if (filas == 0)
+      pw.Text(
+        'No hay actividades en el período elegido.',
+        style: _estilo(9, color: ColoresHoja.textoSuave),
+      ),
+    pw.SizedBox(height: 12),
+    _tituloSeccion('Operarios asignados'),
+    for (var i = 0; i < operarios.length; i += 3)
+      pw.Padding(
+        padding: const pw.EdgeInsets.only(bottom: 8),
+        child: pw.Row(
           children: [
-            // Fondo (rejilla)
-            pw.Positioned(
-              left: 0,
-              top: 0,
-              child: pw.SizedBox(
-                width: totalW,
-                height: coreH,
-                child: pw.Container(
-                  decoration: pw.BoxDecoration(
-                    border: pw.Border.all(color: PdfColors.grey700, width: 0.8),
-                  ),
-                  child: pw.Stack(
-                    children: [
-                      // Header
-                      pw.Positioned(
-                        left: 0,
-                        top: 0,
-                        child: pw.SizedBox(
-                          width: totalW,
-                          height: dayHeaderH,
-                          child: pw.Row(
-                            children: [
-                              pw.Container(
-                                width: timeColW,
-                                height: dayHeaderH,
-                                padding: const pw.EdgeInsets.all(6),
-                                decoration: pw.BoxDecoration(
-                                  color: PdfColors.amber,
-                                  border: pw.Border(
-                                    right: const pw.BorderSide(
-                                      color: PdfColors.grey700,
-                                      width: 0.8,
-                                    ),
-                                    bottom: const pw.BorderSide(
-                                      color: PdfColors.grey700,
-                                      width: 0.8,
-                                    ),
-                                  ),
-                                ),
-                                child: pw.Text(
-                                  'Hora',
-                                  style: pw.TextStyle(
-                                    fontWeight: pw.FontWeight.bold,
-                                    fontSize: 10,
-                                  ),
-                                ),
-                              ),
-                              for (int d = 0; d < dayCols; d++)
-                                pw.Container(
-                                  width: dayW,
-                                  height: dayHeaderH,
-                                  padding: const pw.EdgeInsets.all(6),
-                                  decoration: pw.BoxDecoration(
-                                    color: PdfColors.amber,
-                                    border: pw.Border(
-                                      right: const pw.BorderSide(
-                                        color: PdfColors.grey700,
-                                        width: 0.8,
-                                      ),
-                                      bottom: const pw.BorderSide(
-                                        color: PdfColors.grey700,
-                                        width: 0.8,
-                                      ),
-                                    ),
-                                  ),
-                                  child: pw.Text(
-                                    dayLabels[d],
-                                    style: pw.TextStyle(
-                                      fontWeight: pw.FontWeight.bold,
-                                      fontSize: 10,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                      // Líneas horizontales
-                      for (int i = 0; i <= steps; i++)
-                        pw.Positioned(
-                          left: 0,
-                          top: dayHeaderH + i * stepH,
-                          child: pw.SizedBox(
-                            width: totalW,
-                            height: 0.8,
-                            child: pw.Container(color: PdfColors.grey300),
-                          ),
-                        ),
-
-                      // Etiquetas de hora
-                      for (int m = fixedStartMin; m < fixedEndMin; m += 60)
-                        pw.Positioned(
-                          left: 0,
-                          top: math.max(0, yForMin(m) - 7),
-                          child: pw.SizedBox(
-                            width: timeColW,
-                            height: 12,
-                            child: pw.Padding(
-                              padding: const pw.EdgeInsets.only(left: 6),
-                              child: pw.Text(
-                                _fmtHHmmFromMinutes(m),
-                                style: const pw.TextStyle(fontSize: 8.5),
-                              ),
-                            ),
-                          ),
-                        ),
-                      pw.Positioned(
-                        left: 0,
-                        top: coreH,
-                        child: pw.SizedBox(
-                          width: timeColW,
-                          height: bottomPad,
-                          child: pw.Padding(
-                            padding: const pw.EdgeInsets.only(left: 6, top: 1),
-                            child: pw.Text(
-                              _fmtHHmmFromMinutes(fixedEndMin),
-                              style: const pw.TextStyle(fontSize: 8.5),
-                            ),
-                          ),
-                        ),
-                      ),
-                      for (int d = 0; d <= dayCols; d++)
-                        pw.Positioned(
-                          left: timeColW + d * dayW,
-                          top: 0,
-                          child: pw.SizedBox(
-                            width: 0.8,
-                            height: coreH,
-                            child: pw.Container(color: PdfColors.grey700),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
+            for (var k = i; k < i + 3; k++) ...[
+              if (k > i) pw.SizedBox(width: 10),
+              pw.Expanded(
+                child: k < operarios.length
+                    ? _operarioPortada(operarios[k], r)
+                    : pw.SizedBox(),
               ),
-            ),
-
-            if (horario.descansoInicioMin != null &&
-                horario.descansoFinMin != null)
-              ...() {
-                final top = yForMin(horario.descansoInicioMin!);
-                final bottom = yForMin(horario.descansoFinMin!);
-                final h = math.max(18.0, bottom - top);
-
-                return [
-                  pw.Positioned(
-                    left: 0,
-                    top: top,
-                    child: pw.SizedBox(
-                      width: totalW,
-                      height: h,
-                      child: pw.Container(
-                        decoration: pw.BoxDecoration(
-                          color: PdfColors.red100,
-                          border: pw.Border.all(
-                            color: PdfColors.red600,
-                            width: 0.8,
-                          ),
-                        ),
-                        padding: const pw.EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        child: pw.Align(
-                          alignment: pw.Alignment.centerLeft,
-                          child: pw.Text(
-                            'DESCANSO',
-                            style: pw.TextStyle(
-                              fontSize: 12,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColors.red900,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ];
-              }(),
-
-            // Bloques de tareas
-            ...placements.expand((placement) {
-              final top = yForMin(placement.startMin);
-              final bottom = yForMin(placement.endMin);
-
-              final height = math.max(14.0, bottom - top);
-              const outerPad = 3.0;
-              const columnGap = 4.0;
-
-              final availableW = dayW - (outerPad * 2);
-              final columnCount = math.max(1, placement.columnCount);
-              final width = columnCount == 1
-                  ? availableW
-                  : (availableW - (columnGap * (columnCount - 1))) /
-                        columnCount;
-
-              // mínimo para 3 líneas siempre
-              final left =
-                  timeColW +
-                  (placement.dayIndex * dayW) +
-                  outerPad +
-                  (placement.column * (width + columnGap));
-              final t = placement.tarea;
-
-              final ubic = (t.ubicacionNombre ?? '').trim();
-              final elem = (t.elementoNombre ?? '').trim();
-
-              final ubicElem = (ubic.isEmpty && elem.isEmpty)
-                  ? ''
-                  : [
-                      if (ubic.isNotEmpty) ubic,
-                      if (elem.isNotEmpty) elem,
-                    ].join(' - ');
-
-              final timeLabel =
-                  '${DateFormat('HH:mm').format(t.fechaInicio)} - ${DateFormat('HH:mm').format(t.fechaFin)}';
-              final ultraLabel = t.descripcion.trim().isNotEmpty
-                  ? t.descripcion.trim()
-                  : (ubicElem.isNotEmpty ? ubicElem : timeLabel);
-              final areaLabel = ubicElem.isNotEmpty ? ubicElem : timeLabel;
-
-              final ultraCompact = height < 20;
-              final compact = height < 40;
-              final padding = ultraCompact ? 2.0 : (compact ? 4.0 : 6.0);
-              final titleFont = ultraCompact ? 6.5 : (compact ? 7.5 : 9.0);
-              final bodyFont = ultraCompact ? 6.0 : (compact ? 6.6 : 8.0);
-              final content = <pw.Widget>[
-                if (ultraCompact)
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    mainAxisSize: pw.MainAxisSize.min,
-                    children: [
-                      pw.Text(
-                        ultraLabel,
-                        style: pw.TextStyle(
-                          fontSize: bodyFont,
-                          fontWeight: pw.FontWeight.bold,
-                        ),
-                        maxLines: 1,
-                      ),
-                      if (height >= 18)
-                        pw.Text(
-                          areaLabel,
-                          style: pw.TextStyle(fontSize: bodyFont - 0.2),
-                          maxLines: 1,
-                        ),
-                    ],
-                  )
-                else ...[
-                  pw.Text(
-                    t.descripcion,
-                    style: pw.TextStyle(
-                      fontSize: titleFont,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                    maxLines: 1,
-                  ),
-                  if (ubicElem.isNotEmpty) ...[
-                    pw.SizedBox(height: 2),
-                    pw.Text(
-                      ubicElem,
-                      style: pw.TextStyle(fontSize: bodyFont),
-                      maxLines: compact ? 2 : 1,
-                    ),
-                  ],
-                  pw.SizedBox(height: 2),
-                  pw.Text(
-                    timeLabel,
-                    style: pw.TextStyle(fontSize: bodyFont),
-                    maxLines: 1,
-                  ),
-                ],
-              ];
-
-              return [
-                pw.Positioned(
-                  left: left,
-                  top: top,
-                  child: pw.SizedBox(
-                    width: width,
-                    height: height,
-                    child: pw.Container(
-                      padding: pw.EdgeInsets.all(padding),
-                      decoration: pw.BoxDecoration(
-                        color: PdfColors.green100,
-                        border: pw.Border.all(
-                          color: PdfColors.green700,
-                          width: 0.9,
-                        ),
-                        borderRadius: pw.BorderRadius.circular(7),
-                      ),
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        mainAxisSize: pw.MainAxisSize.min,
-                        children: content,
-
-                        // 2) Ubicación - Elemento
-
-                        // 3) Hora
-                      ),
-                    ),
-                  ),
-                ),
-              ];
-            }),
+            ],
           ],
         ),
-      );
-    },
-  );
-}
-
-DateTime? _parseYmd(String ymd) {
-  if (ymd.trim().isEmpty) return null;
-  try {
-    final parts = ymd.split('-');
-    if (parts.length != 3) return null;
-    final y = int.parse(parts[0]);
-    final m = int.parse(parts[1]);
-    final d = int.parse(parts[2]);
-    return DateTime(y, m, d);
-  } catch (_) {
-    return null;
-  }
-}
-
-// ignore: unused_element
-_GridHorarioConfig _resolverHorarioGrid({
-  required List<_HorarioLite> horarios,
-  required List<_TareaLite> tareas,
-}) {
-  int? minApertura;
-  int? maxCierre;
-  int? minDescanso;
-  int? maxDescanso;
-
-  for (final h in horarios) {
-    final weekday = h.weekday;
-    if (weekday == null || weekday == DateTime.sunday) continue;
-
-    minApertura = minApertura == null
-        ? h.aperturaMin
-        : math.min(minApertura, h.aperturaMin);
-    maxCierre = maxCierre == null
-        ? h.cierreMin
-        : math.max(maxCierre, h.cierreMin);
-
-    final descansoInicio = h.descansoInicioMin;
-    final descansoFin = h.descansoFinMin;
-    if (descansoInicio == null ||
-        descansoFin == null ||
-        descansoFin <= descansoInicio) {
-      continue;
-    }
-
-    minDescanso = minDescanso == null
-        ? descansoInicio
-        : math.min(minDescanso, descansoInicio);
-    maxDescanso = maxDescanso == null
-        ? descansoFin
-        : math.max(maxDescanso, descansoFin);
-  }
-
-  if (minApertura == null || maxCierre == null) {
-    for (final t in tareas) {
-      final iniMin = _minutesOfDay(t.fechaInicio);
-      final finMin = _minutesOfDay(t.fechaFin);
-      if (finMin <= iniMin) continue;
-
-      minApertura = minApertura == null
-          ? iniMin
-          : math.min(minApertura, iniMin);
-      maxCierre = maxCierre == null ? finMin : math.max(maxCierre, finMin);
-    }
-
-    if (maxCierre != null) {
-      maxCierre = math.max(maxCierre, 16 * 60);
-    }
-  }
-
-  minApertura ??= 8 * 60;
-  maxCierre ??= 16 * 60;
-
-  final inicioHora = _clampInt(minApertura ~/ 60, 0, 23);
-  var finHora = _clampInt((maxCierre + 59) ~/ 60, 1, 24);
-  if (finHora <= inicioHora) {
-    finHora = _clampInt(inicioHora + 1, 1, 24);
-  }
-
-  int? descansoInicioVisible;
-  int? descansoFinVisible;
-  if (minDescanso != null && maxDescanso != null && maxDescanso > minDescanso) {
-    final inicioRango = inicioHora * 60;
-    final finRango = finHora * 60;
-    descansoInicioVisible = _clampInt(minDescanso, inicioRango, finRango - 1);
-    descansoFinVisible = _clampInt(
-      maxDescanso,
-      descansoInicioVisible + 1,
-      finRango,
-    );
-  }
-
-  return _GridHorarioConfig(
-    inicioMin: inicioHora * 60,
-    finMin: finHora * 60,
-    descansoInicioMin: descansoInicioVisible,
-    descansoFinMin: descansoFinVisible,
-  );
-}
-
-List<_TaskPlacement> _buildTaskPlacements({
-  required List<_TareaLite> tareas,
-  required int fixedStartMin,
-  required int fixedEndMin,
-  required int dayCols,
-}) {
-  final out = <_TaskPlacement>[];
-
-  for (var dayIndex = 0; dayIndex < dayCols; dayIndex++) {
-    final spans =
-        tareas
-            .where((t) => (t.fechaInicio.weekday - 1) == dayIndex)
-            .map((t) {
-              final startMin = _clampInt(
-                _minutesOfDay(t.fechaInicio),
-                fixedStartMin,
-                fixedEndMin,
-              );
-              final rawEnd = math.max(
-                _minutesOfDay(t.fechaFin),
-                _minutesOfDay(t.fechaInicio) + 1,
-              );
-              final endMin = _clampInt(rawEnd, fixedStartMin, fixedEndMin);
-              return _TaskSpan(
-                tarea: t,
-                dayIndex: dayIndex,
-                startMin: startMin,
-                endMin: endMin,
-              );
-            })
-            .where((span) => span.endMin > span.startMin)
-            .toList()
-          ..sort((a, b) {
-            final startCmp = a.startMin.compareTo(b.startMin);
-            if (startCmp != 0) return startCmp;
-            return a.endMin.compareTo(b.endMin);
-          });
-
-    if (spans.isEmpty) continue;
-
-    var cluster = <_TaskSpan>[];
-    var clusterEnd = -1;
-
-    void flushCluster() {
-      if (cluster.isEmpty) return;
-      out.addAll(_assignTaskColumns(cluster));
-      cluster = <_TaskSpan>[];
-      clusterEnd = -1;
-    }
-
-    for (final span in spans) {
-      if (cluster.isEmpty) {
-        cluster.add(span);
-        clusterEnd = span.endMin;
-        continue;
-      }
-
-      if (span.startMin < clusterEnd) {
-        cluster.add(span);
-        clusterEnd = math.max(clusterEnd, span.endMin);
-        continue;
-      }
-
-      flushCluster();
-      cluster.add(span);
-      clusterEnd = span.endMin;
-    }
-
-    flushCluster();
-  }
-
-  return out;
-}
-
-List<_TaskPlacement> _assignTaskColumns(List<_TaskSpan> cluster) {
-  final columnEnds = <int>[];
-  final temp = <Map<String, dynamic>>[];
-
-  for (final span in cluster) {
-    var column = -1;
-    for (var i = 0; i < columnEnds.length; i++) {
-      if (span.startMin >= columnEnds[i]) {
-        column = i;
-        break;
-      }
-    }
-
-    if (column == -1) {
-      column = columnEnds.length;
-      columnEnds.add(span.endMin);
-    } else {
-      columnEnds[column] = span.endMin;
-    }
-
-    temp.add({'span': span, 'column': column});
-  }
-
-  final columnCount = math.max(1, columnEnds.length);
-  return temp.map((item) {
-    final span = item['span'] as _TaskSpan;
-    final column = item['column'] as int;
-    return _TaskPlacement(
-      tarea: span.tarea,
-      dayIndex: span.dayIndex,
-      startMin: span.startMin,
-      endMin: span.endMin,
-      column: column,
-      columnCount: columnCount,
-    );
-  }).toList();
-}
-
-String _safeFileName(String s) {
-  final cleaned = s
-      .replaceAll(RegExp(r'[\\/:*?"<>|]'), '')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
-  return cleaned;
-}
-
-int _minutesOfDay(DateTime dt) => dt.hour * 60 + dt.minute;
-
-String _toYmd(DateTime d) {
-  return '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-}
-
-int _clampInt(int value, int min, int max) {
-  if (value < min) return min;
-  if (value > max) return max;
-  return value;
-}
-
-String _fmtHHmmFromMinutes(int m) {
-  final hh = (m ~/ 60).toString().padLeft(2, '0');
-  final mm = (m % 60).toString().padLeft(2, '0');
-  return '$hh:$mm';
-}
-
-int? _parseHoraMin(dynamic raw) {
-  final value = raw?.toString().trim() ?? '';
-  if (value.isEmpty) return null;
-
-  final parts = value.split(':');
-  if (parts.length < 2) return null;
-
-  final hour = int.tryParse(parts[0]);
-  final minute = int.tryParse(parts[1]);
-  if (hour == null ||
-      minute == null ||
-      hour < 0 ||
-      hour > 23 ||
-      minute < 0 ||
-      minute > 59) {
-    return null;
-  }
-  return hour * 60 + minute;
-}
-
-int? _weekdayDesdeDiaHorario(String? rawDia) {
-  if (rawDia == null) return null;
-  switch (_normalizarDia(rawDia)) {
-    case 'LUNES':
-    case 'MONDAY':
-      return DateTime.monday;
-    case 'MARTES':
-    case 'TUESDAY':
-      return DateTime.tuesday;
-    case 'MIERCOLES':
-    case 'WEDNESDAY':
-      return DateTime.wednesday;
-    case 'JUEVES':
-    case 'THURSDAY':
-      return DateTime.thursday;
-    case 'VIERNES':
-    case 'FRIDAY':
-      return DateTime.friday;
-    case 'SABADO':
-    case 'SATURDAY':
-      return DateTime.saturday;
-    case 'DOMINGO':
-    case 'SUNDAY':
-      return DateTime.sunday;
-    default:
-      return null;
-  }
-}
-
-String _normalizarDia(String raw) {
-  var out = raw.trim().toUpperCase();
-  const replacements = {'_': '', '-': '', ' ': ''};
-  replacements.forEach((from, to) => out = out.replaceAll(from, to));
-  return out;
+      ),
+  ];
 }

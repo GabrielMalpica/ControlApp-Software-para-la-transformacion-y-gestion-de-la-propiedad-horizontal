@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
+import 'package:flutter_application_1/widgets/usuario/hoja_vida_campos.dart';
 
 class EditarUsuarioPage extends StatefulWidget {
   final Usuario usuario;
@@ -38,13 +39,16 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
   late TextEditingController _telefonoCtrl;
   late TextEditingController _cedulaCtrl;
   late TextEditingController _direccionCtrl;
+  late TextEditingController _contactoNombreCtrl;
+  late TextEditingController _contactoParentescoCtrl;
+  late TextEditingController _contactoTelefonoCtrl;
 
   // Campos adicionales
   DateTime? fechaNacimiento;
   String? estadoCivilSeleccionado;
   int numeroHijos = 0;
   bool padresVivos = true;
-  String? tipoSangre, eps, fondo, tipoContrato, jornada;
+  String? tipoSangre, eps, fondo, arl, cajaCompensacion, tipoContrato, jornada;
   String? tallaCamisa, tallaPantalon, tallaCalzado;
   String? rolSeleccionado;
 
@@ -80,6 +84,15 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
     _telefonoCtrl = TextEditingController(text: u.telefono.toString());
     _cedulaCtrl = TextEditingController(text: u.cedula);
     _direccionCtrl = TextEditingController(text: u.direccion ?? '');
+    _contactoNombreCtrl = TextEditingController(
+      text: u.contactoEmergenciaNombre ?? '',
+    );
+    _contactoParentescoCtrl = TextEditingController(
+      text: u.contactoEmergenciaParentesco ?? '',
+    );
+    _contactoTelefonoCtrl = TextEditingController(
+      text: u.contactoEmergenciaTelefono ?? '',
+    );
 
     fechaNacimiento = u.fechaNacimiento;
     rolSeleccionado = u.rol;
@@ -89,6 +102,8 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
     tipoSangre = u.tipoSangre;
     eps = u.eps;
     fondo = u.fondoPensiones;
+    arl = u.arl;
+    cajaCompensacion = u.cajaCompensacion;
     tallaCamisa = u.tallaCamisa;
     tallaPantalon = u.tallaPantalon;
     tallaCalzado = u.tallaCalzado;
@@ -151,6 +166,9 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
     _telefonoCtrl.dispose();
     _cedulaCtrl.dispose();
     _direccionCtrl.dispose();
+    _contactoNombreCtrl.dispose();
+    _contactoParentescoCtrl.dispose();
+    _contactoTelefonoCtrl.dispose();
     super.dispose();
   }
 
@@ -229,6 +247,11 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
         'tipoSangre': tipoSangre,
         'eps': eps,
         'fondoPensiones': fondo,
+        'arl': arl,
+        'cajaCompensacion': cajaCompensacion,
+        'contactoEmergenciaNombre': textoOpcional(_contactoNombreCtrl),
+        'contactoEmergenciaParentesco': textoOpcional(_contactoParentescoCtrl),
+        'contactoEmergenciaTelefono': textoOpcional(_contactoTelefonoCtrl),
         'tallaCamisa': tallaCamisa,
         'tallaPantalon': tallaPantalon,
         'tallaCalzado': tallaCalzado,
@@ -299,9 +322,7 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
         AppFeedback.showFromSnackBar(
           context,
           const SnackBar(
-            content: Text(
-              'Traslado cancelado. No se guardaron los cambios.',
-            ),
+            content: Text('Traslado cancelado. No se guardaron los cambios.'),
             backgroundColor: Colors.orange,
           ),
         );
@@ -657,6 +678,16 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
                         ),
                       ),
                       const SizedBox(height: 8),
+                      ArlCajaCampos(
+                        opcionesArl: enums.arl,
+                        opcionesCaja: enums.cajasCompensacion,
+                        arl: arl,
+                        cajaCompensacion: cajaCompensacion,
+                        onArl: (v) => setState(() => arl = v),
+                        onCajaCompensacion: (v) =>
+                            setState(() => cajaCompensacion = v),
+                      ),
+                      const SizedBox(height: 8),
                       DropdownButtonFormField<String>(
                         initialValue: tallaCamisa,
                         items: enums.tallasCamisa
@@ -710,6 +741,14 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
                     ],
                   ),
                 ),
+              ),
+
+              const SizedBox(height: 12),
+
+              ContactoEmergenciaCard(
+                nombreCtrl: _contactoNombreCtrl,
+                parentescoCtrl: _contactoParentescoCtrl,
+                telefonoCtrl: _contactoTelefonoCtrl,
               ),
 
               const SizedBox(height: 12),
@@ -936,10 +975,11 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
                           const Text('No hay conjuntos creados.')
                         else
                           DropdownButtonFormField<String>(
-                            initialValue: _conjuntos.any(
-                              (conjunto) =>
-                                  conjunto.nit == _conjuntoSeleccionadoNit,
-                            )
+                            initialValue:
+                                _conjuntos.any(
+                                  (conjunto) =>
+                                      conjunto.nit == _conjuntoSeleccionadoNit,
+                                )
                                 ? _conjuntoSeleccionadoNit
                                 : null,
                             decoration: const InputDecoration(
@@ -1032,4 +1072,3 @@ class _PatronJornadaHelpCard extends StatelessWidget {
     );
   }
 }
-
