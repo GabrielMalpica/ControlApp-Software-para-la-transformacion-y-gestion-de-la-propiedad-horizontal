@@ -132,6 +132,13 @@ router.put(
   ctrl.editarUsuario,
 );
 router.get("/usuarios", requirePermission("usuarios.gestionar"), ctrl.listarUsuarios);
+// Vista de tabla (planilla): todos los datos del personal; ?conjuntoId= para
+// los de un conjunto. Ver docs/planilla-personal.md.
+router.get(
+  "/usuarios/planilla",
+  requirePermission("usuarios.gestionar"),
+  ctrl.planillaUsuarios,
+);
 router.delete(
   "/usuarios/:id",
   requirePermission("usuarios.gestionar"),

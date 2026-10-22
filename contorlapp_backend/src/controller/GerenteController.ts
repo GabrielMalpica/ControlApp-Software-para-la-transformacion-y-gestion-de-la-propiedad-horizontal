@@ -8,6 +8,9 @@ import { PermissionService } from "../services/PermissionService";
 import { conSupervisorPorDefecto } from "../services/TareaServices";
 import { ListarUsuariosDTO, UsuarioIdParam } from "../model/Gerente";
 import { extraerActorAuditoriaConNombre } from "../utils/auditoria";
+import { alcanceConjuntos } from "../aplicacion/alcanceConjuntos";
+import { empresaIdAutenticada } from "../middlewares/tenant.middleware";
+import { PlanillaPersonalService } from "../services/PlanillaPersonalService";
 
 // â”€â”€ Schemas de params simples â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const IdParam = z.object({ id: z.coerce.number().int().positive() });
@@ -41,6 +44,10 @@ const AsignarOperarioBody = z.object({
 // Actualizar lÃ­mite de horas semanales
 const LimiteHorasBody = z.object({
   limiteHorasSemana: z.coerce.number().int().min(1).max(84),
+});
+
+const PlanillaUsuariosQuery = z.object({
+  conjuntoId: z.string().trim().min(3).optional(),
 });
 
 const QuitarOperarioBody = z.object({
@@ -176,6 +183,27 @@ export class GerenteController {
       const usuarios = await serviceFor(req).listarUsuarios(dto.rol);
 
       res.json(usuarios);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  /** Vista de tabla de usuarios: todos sus datos y sus vacaciones (sin contraseña). */
+  planillaUsuarios: RequestHandler = async (req, res, next) => {
+    try {
+      const { conjuntoId } = PlanillaUsuariosQuery.parse(req.query);
+      const empresaId = await empresaIdAutenticada(req);
+      const alcance = await alcanceConjuntos(prisma, {
+        usuarioId: String(req.user?.sub ?? ""),
+        rol: String(req.user?.rol ?? ""),
+        empresaId,
+      });
+      const filas = await new PlanillaPersonalService(prisma).listar({
+        empresaId,
+        alcance,
+        conjuntoId,
+      });
+      res.json(filas);
     } catch (err) {
       next(err);
     }

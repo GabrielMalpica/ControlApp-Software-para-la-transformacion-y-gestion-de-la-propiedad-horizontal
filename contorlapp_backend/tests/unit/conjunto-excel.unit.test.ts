@@ -1,4 +1,4 @@
-import { DiaSemana, Frecuencia } from "@prisma/client";
+import { ARL, CajaCompensacion, DiaSemana, Frecuencia } from "@prisma/client";
 import ExcelJS from "exceljs";
 import fs from "fs";
 import path from "path";
@@ -44,6 +44,13 @@ describe("Plantilla y parsing de carga masiva de conjuntos", () => {
     expect(
       parseExcelEnum("Medio día sábado completo", ["MEDIO_SEMANA_SABADO"]),
     ).toBe("MEDIO_SEMANA_SABADO");
+    const arl = Object.values(ARL);
+    expect(parseExcelEnum("Seguros Bolívar", arl)).toBe("BOLIVAR");
+    expect(parseExcelEnum("HDI (antes Liberty)", arl)).toBe("HDI_LIBERTY");
+    expect(parseExcelEnum("La Equidad", arl)).toBe("EQUIDAD");
+    expect(parseExcelEnum("Comfamiliar Nariño", Object.values(CajaCompensacion))).toBe(
+      "COMFAMILIAR_NARINO",
+    );
   });
 
   test("mapea encabezados amigables y conserva aliases camelCase", () => {
@@ -143,6 +150,11 @@ describe("Plantilla y parsing de carga masiva de conjuntos", () => {
       tipoSangre: "O-",
       eps: "Sura",
       fondoPensiones: "Porvenir",
+      arl: "Axa colpatria",
+      cajaCompensacion: "Comfamiliar narino",
+      contactoEmergenciaNombre: " Rosa Pérez ",
+      contactoEmergenciaParentesco: "Madre",
+      contactoEmergenciaTelefono: 3109876543,
       tallaCamisa: "M",
       tallaPantalon: "32",
       tallaCalzado: "40",
@@ -165,6 +177,39 @@ describe("Plantilla y parsing de carga masiva de conjuntos", () => {
     expect(operario.tipoSangre).toBe("O_NEGATIVO");
     expect(operario.tipoContrato).toBe("TERMINO_INDEFINIDO");
     expect(operario.patronJornada).toBe("MEDIO_SEMANA_SABADO");
+    expect(operario.arl).toBe("AXA_COLPATRIA");
+    expect(operario.cajaCompensacion).toBe("COMFAMILIAR_NARINO");
+    expect(operario.contactoEmergenciaNombre).toBe("Rosa Pérez");
+    expect(operario.contactoEmergenciaParentesco).toBe("Madre");
+    expect(operario.contactoEmergenciaTelefono).toBe("3109876543");
+  });
+
+  test("la plantilla trae ARL, caja y contacto de emergencia; la nota de funciones sigue en su columna", async () => {
+    const buffer = await new ConjuntoExcelTemplateService().generar(catalogs);
+    const excel = new ExcelJS.Workbook();
+    await excel.xlsx.load(buffer);
+    const hoja = excel.getWorksheet("Operarios")!;
+    const campos: readonly string[] = PLANTILLA_CONJUNTO_COLUMNAS.Operarios;
+    const columna = (campo: string) => campos.indexOf(campo) + 1;
+
+    expect(hoja.getCell(2, columna("arl")).dataValidation.type).toBe("list");
+    expect(hoja.getCell(2, columna("cajaCompensacion")).dataValidation.type).toBe("list");
+    expect(hoja.getCell(1, columna("funciones")).note).toBeTruthy();
+    expect(hoja.getCell(1, columna("funciones") - 1).note).toBeFalsy();
+
+    // La fila de ejemplo sigue alineada con los encabezados.
+    const ejemplo = OperarioFilaDTO.parse(
+      Object.fromEntries(campos.map((campo, i) => [campo, hoja.getCell(2, i + 1).value])),
+    );
+    expect(ejemplo).toMatchObject({
+      nombre: "Carlos Pérez",
+      arl: "SURA",
+      cajaCompensacion: "COMPENSAR",
+      contactoEmergenciaNombre: "Ana Pérez",
+      contactoEmergenciaParentesco: "Madre",
+      contactoEmergenciaTelefono: "3109876543",
+      funciones: ["TODERO", "ASEO"],
+    });
   });
 
   test("valida disponibilidad y periodos de domingo", () => {

@@ -4,6 +4,8 @@ import { z } from "zod";
  * según tu generator (output: ../src/generated/prisma).
  */
 import {
+  ARL,
+  CajaCompensacion,
   EPS,
   DiaSemana,
   EstadoCivil,
@@ -43,10 +45,15 @@ export interface UsuarioDominio {
   tipoSangre?: TipoSangre | null;
   eps?: EPS | null;
   fondoPensiones?: FondoPension | null;
+  arl?: ARL | null;
+  cajaCompensacion?: CajaCompensacion | null;
   tallaCamisa?: TallaCamisa | null;
   tallaPantalon?: TallaPantalon | null;
   tallaCalzado?: TallaCalzado | null;
   tipoContrato?: TipoContrato | null;
+  contactoEmergenciaNombre?: string | null;
+  contactoEmergenciaParentesco?: string | null;
+  contactoEmergenciaTelefono?: string | null;
 
   jornadaLaboral?: JornadaLaboral | null;
   patronJornada?: PatronJornada | null;
@@ -64,6 +71,35 @@ export interface UsuarioDominio {
 export type UsuarioPublico = Omit<UsuarioDominio, "contrasena">;
 
 /** ---------- ZOD DTOs ---------- */
+
+/** Texto opcional de la hoja de vida: vacío o solo espacios se guarda como null. */
+const textoOpcional = (max: number, campo: string) =>
+  z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? null : v),
+    z.string().trim().max(max, `${campo}: máximo ${max} caracteres`).optional().nullable(),
+  );
+
+/**
+ * Contacto de emergencia. El teléfono es texto (admite fijo con indicativo o
+ * celular con +57); se exige que tenga entre 7 y 15 dígitos.
+ */
+export const contactoEmergenciaCampos = {
+  contactoEmergenciaNombre: textoOpcional(120, "Nombre del contacto de emergencia"),
+  contactoEmergenciaParentesco: textoOpcional(60, "Parentesco del contacto de emergencia"),
+  contactoEmergenciaTelefono: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? null : v),
+    z
+      .string()
+      .trim()
+      .regex(/^[0-9+()\s-]+$/, "El teléfono de emergencia solo admite números, espacios, +, - y paréntesis")
+      .refine((v) => {
+        const digitos = v.replace(/\D/g, "").length;
+        return digitos >= 7 && digitos <= 15;
+      }, "El teléfono de emergencia debe tener entre 7 y 15 dígitos")
+      .optional()
+      .nullable(),
+  ),
+};
 
 /**
  * Como 'id' no es autoincrement, lo exigimos al crear.
@@ -101,6 +137,9 @@ export const CrearUsuarioDTO = z.object({
   tipoSangre: z.nativeEnum(TipoSangre).optional().nullable(),
   eps: z.nativeEnum(EPS).optional().nullable(),
   fondoPensiones: z.nativeEnum(FondoPension).optional().nullable(),
+  arl: z.nativeEnum(ARL).optional().nullable(),
+  cajaCompensacion: z.nativeEnum(CajaCompensacion).optional().nullable(),
+  ...contactoEmergenciaCampos,
 
   // 🔹 Ahora las tallas son OPCIONALES
   tallaCamisa: z.nativeEnum(TallaCamisa).optional().nullable(),
@@ -135,6 +174,9 @@ export const EditarUsuarioDTO = z.object({
   tipoSangre: z.nativeEnum(TipoSangre).optional().nullable(),
   eps: z.nativeEnum(EPS).optional().nullable(),
   fondoPensiones: z.nativeEnum(FondoPension).optional().nullable(),
+  arl: z.nativeEnum(ARL).optional().nullable(),
+  cajaCompensacion: z.nativeEnum(CajaCompensacion).optional().nullable(),
+  ...contactoEmergenciaCampos,
   tallaCamisa: z.nativeEnum(TallaCamisa).optional().nullable(),
   tallaPantalon: z.nativeEnum(TallaPantalon).optional().nullable(),
   tallaCalzado: z.nativeEnum(TallaCalzado).optional().nullable(),
@@ -188,10 +230,15 @@ export const usuarioPublicSelect = {
   tipoSangre: true,
   eps: true,
   fondoPensiones: true,
+  arl: true,
+  cajaCompensacion: true,
   tallaCamisa: true,
   tallaPantalon: true,
   tallaCalzado: true,
   tipoContrato: true,
+  contactoEmergenciaNombre: true,
+  contactoEmergenciaParentesco: true,
+  contactoEmergenciaTelefono: true,
   jornadaLaboral: true,
   patronJornada: true,
   operario: {

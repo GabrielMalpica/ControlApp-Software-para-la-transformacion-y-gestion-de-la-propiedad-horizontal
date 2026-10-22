@@ -1,5 +1,7 @@
 import ExcelJS from "exceljs";
 import {
+  ARL,
+  CajaCompensacion,
   DiaSemana,
   EPS,
   EstadoCivil,
@@ -38,6 +40,12 @@ const HEADER_FONT = "FF17320B";
 const INPUT_FILL = "FFF2F8EE";
 const MAX_DATA_ROW = 1000;
 
+/** Número de columna (1 = A) de un campo en su hoja. */
+function columnaDe(hoja: NombreHojaDatosConjunto, campo: string): number {
+  const campos: readonly string[] = PLANTILLA_CONJUNTO_COLUMNAS[hoja];
+  return campos.indexOf(campo) + 1;
+}
+
 function friendlyEnum(value: string): string {
   const explicit: Record<string, string> = {
     TERMINO_INDEFINIDO: "Indefinido",
@@ -59,6 +67,11 @@ function friendlyEnum(value: string): string {
     POR_HORA: "Por hora",
     RENDIMIENTO: "Por rendimiento",
     DURACION_FIJA: "Duración fija",
+    AXA_COLPATRIA: "AXA Colpatria",
+    BOLIVAR: "Seguros Bolívar",
+    EQUIDAD: "La Equidad",
+    ALFA: "Seguros Alfa",
+    HDI_LIBERTY: "HDI (antes Liberty)",
   };
   if (explicit[value]) return explicit[value];
   if (/^T_\d+$/.test(value)) return value.slice(2);
@@ -109,9 +122,14 @@ function exampleRows(
         "Soltero",
         0,
         "Sí",
+        "Ana Pérez",
+        "Madre",
+        "3109876543",
         "O+",
         "Sura",
         "Porvenir",
+        "Sura",
+        "Compensar",
         "M",
         "32",
         "40",
@@ -341,6 +359,8 @@ export class ConjuntoExcelTemplateService {
       "Tipo sangre": Object.values(TipoSangre).map(friendlyEnum),
       EPS: Object.values(EPS).map(friendlyEnum),
       "Fondo pensiones": Object.values(FondoPension).map(friendlyEnum),
+      ARL: Object.values(ARL).map(friendlyEnum),
+      "Caja compensación": Object.values(CajaCompensacion).map(friendlyEnum),
       "Talla camisa": Object.values(TallaCamisa).map(friendlyEnum),
       "Talla pantalón": Object.values(TallaPantalon).map(friendlyEnum),
       "Talla calzado": Object.values(TallaCalzado).map(friendlyEnum),
@@ -425,6 +445,8 @@ export class ConjuntoExcelTemplateService {
     applyList("Operarios", "tipoSangre", "Tipo sangre");
     applyList("Operarios", "eps", "EPS");
     applyList("Operarios", "fondoPensiones", "Fondo pensiones");
+    applyList("Operarios", "arl", "ARL");
+    applyList("Operarios", "cajaCompensacion", "Caja compensación");
     applyList("Operarios", "tallaCamisa", "Talla camisa");
     applyList("Operarios", "tallaPantalon", "Talla pantalón");
     applyList("Operarios", "tallaCalzado", "Talla calzado");
@@ -456,7 +478,8 @@ export class ConjuntoExcelTemplateService {
 
     workbook.getWorksheet("Conjunto")!.getCell("F1").note =
       "Admite varios servicios separados por coma o punto y coma. Consulta la hoja Opciones.";
-    workbook.getWorksheet("Operarios")!.getCell("T1").note =
+    const operarios = workbook.getWorksheet("Operarios")!;
+    operarios.getCell(1, columnaDe("Operarios", "funciones")).note =
       "Admite varias funciones separadas por coma o punto y coma.";
     workbook.getWorksheet("Preventivas")!.getCell("G1").note =
       "SEMANAL admite varios días separados por coma o punto y coma. QUINCENAL admite uno.";

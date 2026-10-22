@@ -47,10 +47,15 @@ export const EditarAdministradorDTO = EditarUsuarioDTO.pick({
   tipoSangre: true,
   eps: true,
   fondoPensiones: true,
+  arl: true,
+  cajaCompensacion: true,
   tallaCamisa: true,
   tallaPantalon: true,
   tallaCalzado: true,
   tipoContrato: true,
+  contactoEmergenciaNombre: true,
+  contactoEmergenciaParentesco: true,
+  contactoEmergenciaTelefono: true,
 }).extend(camposFueraDeEdicionRapida);
 
 /** POST /gerente/administradores/reemplazos */

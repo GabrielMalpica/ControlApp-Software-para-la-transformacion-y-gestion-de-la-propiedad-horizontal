@@ -104,6 +104,7 @@ import {
   buildBloqueosPorPatronJornada,
 } from "./DefinicionTareaPreventivaService";
 import { NotificacionService } from "./NotificacionService";
+import { whereUsuariosDeEmpresa } from "./PlanillaPersonalService";
 import { sincronizarActividadesConTitularDePlaza } from "./PlazaTitularSync";
 import {
   construirRutaElemento,
@@ -255,10 +256,15 @@ const usuarioAuditoriaSelect = {
   tipoSangre: true,
   eps: true,
   fondoPensiones: true,
+  arl: true,
+  cajaCompensacion: true,
   tallaCamisa: true,
   tallaPantalon: true,
   tallaCalzado: true,
   tipoContrato: true,
+  contactoEmergenciaNombre: true,
+  contactoEmergenciaParentesco: true,
+  contactoEmergenciaTelefono: true,
   jornadaLaboral: true,
   patronJornada: true,
 } as const;
@@ -1170,10 +1176,15 @@ export class GerenteService {
           tipoSangre: dto.tipoSangre,
           eps: dto.eps,
           fondoPensiones: dto.fondoPensiones,
+          arl: dto.arl,
+          cajaCompensacion: dto.cajaCompensacion,
           tallaCamisa: dto.tallaCamisa,
           tallaPantalon: dto.tallaPantalon,
           tallaCalzado: dto.tallaCalzado,
           tipoContrato: dto.tipoContrato,
+          contactoEmergenciaNombre: dto.contactoEmergenciaNombre,
+          contactoEmergenciaParentesco: dto.contactoEmergenciaParentesco,
+          contactoEmergenciaTelefono: dto.contactoEmergenciaTelefono,
           jornadaLaboral: dto.jornadaLaboral,
           activo: dto.activo ?? true,
           patronJornada: normalizarPatronJornada(dto.jornadaLaboral, dto.patronJornada),
@@ -1522,17 +1533,7 @@ export class GerenteService {
 
   async listarUsuarios(rol?: Rol): Promise<UsuarioPublico[]> {
     const empresaId = await this.resolverEmpresaNit();
-    const where: any = {
-      OR: [
-        { gerente: { empresaId } },
-        { jefeOperaciones: { empresaId } },
-        { supervisor: { empresaId } },
-        { operario: { empresaId } },
-        { administrador: { conjuntos: { some: { empresaId } } } },
-        { administrador: { conjuntos: { none: {} } } },
-        { residente: { conjunto: { empresaId } } },
-      ],
-    };
+    const where: any = whereUsuariosDeEmpresa(empresaId);
     if (rol) {
       where.rol = rol;
     } else {

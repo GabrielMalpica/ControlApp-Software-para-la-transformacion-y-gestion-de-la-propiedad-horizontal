@@ -1,4 +1,6 @@
 import {
+  ARL,
+  CajaCompensacion,
   DiaSemana,
   EPS,
   EstadoCivil,
@@ -51,9 +53,14 @@ export const PLANTILLA_CONJUNTO_COLUMNAS = {
     "estadoCivil",
     "numeroHijos",
     "padresVivos",
+    "contactoEmergenciaNombre",
+    "contactoEmergenciaParentesco",
+    "contactoEmergenciaTelefono",
     "tipoSangre",
     "eps",
     "fondoPensiones",
+    "arl",
+    "cajaCompensacion",
     "tallaCamisa",
     "tallaPantalon",
     "tallaCalzado",
@@ -167,9 +174,14 @@ export const PLANTILLA_CONJUNTO_ETIQUETAS: Record<
     estadoCivil: "Estado civil",
     numeroHijos: "Número de hijos",
     padresVivos: "Padres vivos",
+    contactoEmergenciaNombre: "Contacto de emergencia",
+    contactoEmergenciaParentesco: "Parentesco del contacto",
+    contactoEmergenciaTelefono: "Teléfono del contacto",
     tipoSangre: "Tipo de sangre",
     eps: "EPS",
     fondoPensiones: "Fondo de pensiones",
+    arl: "ARL",
+    cajaCompensacion: "Caja de compensación",
     tallaCamisa: "Talla de camisa",
     tallaPantalon: "Talla de pantalón",
     tallaCalzado: "Talla de calzado",
@@ -256,6 +268,10 @@ const ALIASES_COLUMNAS: Partial<
   Operarios: {
     cedula: ["documento", "numero documento"],
     patronJornada: ["patron jornada"],
+    contactoEmergenciaNombre: ["nombre contacto emergencia", "contacto emergencia"],
+    contactoEmergenciaParentesco: ["parentesco", "parentesco contacto emergencia"],
+    contactoEmergenciaTelefono: ["telefono emergencia", "telefono contacto emergencia"],
+    cajaCompensacion: ["caja compensacion", "caja"],
     contrasena: ["password", "clave"],
     fechaInicioDisponibilidad: ["fecha inicio jornada"],
     fechaFinDisponibilidad: ["fecha fin jornada", "fecha fin jornada opcional"],
@@ -482,6 +498,14 @@ const VALUE_ALIASES: Record<string, string> = {
   abnegativo: "AB_NEGATIVO",
   porrendimiento: "RENDIMIENTO",
   duracionfija: "DURACION_FIJA",
+  // ARL: los nombres que muestra la app y la hoja Opciones.
+  arlsura: "SURA",
+  segurosbolivar: "BOLIVAR",
+  laequidad: "EQUIDAD",
+  segurosalfa: "ALFA",
+  hdi: "HDI_LIBERTY",
+  liberty: "HDI_LIBERTY",
+  hdiantesliberty: "HDI_LIBERTY",
 };
 
 export function parseExcelEnum<T extends string>(
@@ -669,6 +693,9 @@ export const OperarioFilaDTO = z
       (value) => optionalBoolean(value, true),
       z.boolean(),
     ),
+    contactoEmergenciaNombre: optionalText,
+    contactoEmergenciaParentesco: optionalText,
+    contactoEmergenciaTelefono: optionalText,
     tipoSangre: z.preprocess(
       (value) => optionalEnumValue(value, Object.values(TipoSangre)),
       z.nativeEnum(TipoSangre).optional(),
@@ -680,6 +707,14 @@ export const OperarioFilaDTO = z
     fondoPensiones: z.preprocess(
       (value) => optionalEnumValue(value, Object.values(FondoPension)),
       z.nativeEnum(FondoPension).optional(),
+    ),
+    arl: z.preprocess(
+      (value) => optionalEnumValue(value, Object.values(ARL)),
+      z.nativeEnum(ARL).optional(),
+    ),
+    cajaCompensacion: z.preprocess(
+      (value) => optionalEnumValue(value, Object.values(CajaCompensacion)),
+      z.nativeEnum(CajaCompensacion).optional(),
     ),
     tallaCamisa: z.preprocess(
       (value) => optionalEnumValue(value, Object.values(TallaCamisa)),

@@ -35,7 +35,7 @@ export const DECISIONES_POR_MODULO: Record<string, DecisionModulo> = {
   maquinaria: { expuesto: true, motivo: "Solo lectura del estado; no hay regla de dominio de 'necesita mantenimiento'." },
   herramientas: { expuesto: false, motivo: "Pendiente: misma decisión que maquinaria cuando se pida." },
   empresa: { expuesto: false, motivo: "Configuración de la empresa: solo en la app." },
-  usuarios: { expuesto: true, motivo: "Solo operarios (crear, plazas, traslados) con confirmación. Roles, gerentes, permisos y contraseñas nunca." },
+  usuarios: { expuesto: true, motivo: "Solo operarios (crear, plazas, traslados) con confirmación. Roles, gerentes, permisos y contraseñas nunca. La planilla de personal y la hoja de vida (cédula, EPS, ARL, caja de compensación, contacto de emergencia, dirección, tallas, vacaciones) quedan solo en la app." },
   conjuntos: { expuesto: true, motivo: "Lectura y creación con confirmación. Editar y eliminar quedan en la app." },
   mapa_areas: { expuesto: false, motivo: "Planos y archivos: solo en la app." },
   compromisos: { expuesto: true, motivo: "Lectura y creación." },
