@@ -134,10 +134,106 @@ export async function sincronizarActividadesConTitularDePlaza(
   if (anteriorId === nuevoId) return { ...SIN_CAMBIOS_TITULAR };
   const desde = params.desde ?? new Date();
 
+  // Los cronogramas publicados antes de guardar el vínculo Tarea.necesidades
+  // todavía conservan definicionId. Recuperamos las plazas de esas
+  // definiciones para incluir las tareas antiguas y dejarles el vínculo
+  // durable al sincronizarlas.
+  const definiciones = await tx.definicionTareaPreventiva.findMany({
+    where: {
+      conjuntoId,
+      OR: [
+        { necesidades: { some: { id: plazaId } } },
+        ...(anteriorId
+          ? [{ necesidades: { none: {} }, operarios: { some: { id: anteriorId } } }]
+          : []),
+      ],
+    },
+    select: {
+      id: true,
+      necesidades: { select: { id: true, operarioId: true } },
+      operarios: { select: { id: true } },
+    },
+  });
+  const idsOperariosDirectos = Array.from(
+    new Set(
+      definiciones.flatMap((def) =>
+        def.necesidades.length ? [] : def.operarios.map((operario) => operario.id),
+      ),
+    ),
+  );
+  const plazasDirectas = idsOperariosDirectos.length
+    ? await tx.conjuntoNecesidadOperario.findMany({
+        where: {
+          conjuntoId,
+          activo: true,
+          operarioId: { in: idsOperariosDirectos.filter((id) => id !== anteriorId) },
+        },
+        select: { id: true, operarioId: true },
+      })
+    : [];
+  const plazaPorOperario = new Map(
+    plazasDirectas
+      .filter((plaza) => plaza.operarioId != null)
+      .map((plaza) => [plaza.operarioId as string, plaza.id]),
+  );
+  const plazasPorDefinicion = new Map<number, Array<{ id: number; operarioId: string | null }>>();
+  for (const def of definiciones) {
+    if (def.necesidades.length) {
+      plazasPorDefinicion.set(def.id, def.necesidades);
+      continue;
+    }
+    const idsDirectos = def.operarios.map((operario) => operario.id);
+    const idsPlazas = Array.from(
+      new Set([
+        plazaId,
+        ...idsDirectos
+          .filter((id) => id !== anteriorId)
+          .map((id) => plazaPorOperario.get(id))
+          .filter((id): id is number => id != null),
+      ]),
+    );
+    const necesidadesInferidas = idsPlazas.map((id) => ({
+      id,
+      operarioId: id === plazaId ? nuevoId : plazasDirectas.find((plaza) => plaza.id === id)?.operarioId ?? null,
+    }));
+    plazasPorDefinicion.set(def.id, necesidadesInferidas);
+
+    // La definición antigua resolvía por operarios directos. Cuando todas
+    // esas personas corresponden a una plaza (la anterior se sustituye por
+    // esta y el resto sigue ocupando su plaza), migra también la definición;
+    // así las próximas publicaciones ya resuelven desde las necesidades.
+    const todosTienenPlaza = idsDirectos.every(
+      (id) => id === anteriorId || plazaPorOperario.has(id),
+    );
+    if (todosTienenPlaza && idsPlazas.length) {
+      await tx.definicionTareaPreventiva.update({
+        where: { id: def.id },
+        data: { necesidades: { connect: idsPlazas.map((id) => ({ id })) } },
+      });
+    } else if (anteriorId && nuevoId && idsDirectos.includes(anteriorId)) {
+      await tx.definicionTareaPreventiva.update({
+        where: { id: def.id },
+        data: {
+          operarios: {
+            disconnect: [{ id: anteriorId }],
+            connect: [{ id: nuevoId }],
+          },
+        },
+      });
+    }
+  }
+
   const tareas = await tx.tarea.findMany({
     where: {
       conjuntoId,
-      necesidades: { some: { id: plazaId } },
+      ...(definiciones.length
+        ? {
+            OR: [
+              { necesidades: { some: { id: plazaId } } },
+              { definicionId: { in: definiciones.map((def) => def.id) } },
+            ],
+          }
+        : { necesidades: { some: { id: plazaId } } }),
       estado: { in: ESTADOS_TAREA_SIN_TRABAJAR },
       fechaInicio: { gte: desde },
     },
@@ -146,6 +242,7 @@ export async function sincronizarActividadesConTitularDePlaza(
       descripcion: true,
       periodoAnio: true,
       periodoMes: true,
+      definicionId: true,
       operarios: { select: { id: true } },
       necesidades: { select: { id: true, operarioId: true } },
     },
@@ -165,9 +262,12 @@ export async function sincronizarActividadesConTitularDePlaza(
 
   for (const tarea of tareas) {
     const actuales = tarea.operarios.map((o) => o.id);
+    const necesidades = tarea.necesidades.length
+      ? tarea.necesidades
+      : plazasPorDefinicion.get(tarea.definicionId ?? -1) ?? [];
     const cambio = calcularCambioOperariosActividad({
       operariosActuales: actuales,
-      titularesOtrasPlazas: (tarea.necesidades ?? [])
+      titularesOtrasPlazas: necesidades
         .filter((n) => n.id !== plazaId && n.operarioId != null)
         .map((n) => n.operarioId as string),
       anteriorId,
@@ -176,6 +276,12 @@ export async function sincronizarActividadesConTitularDePlaza(
     if (!cambio.quitar.length && !cambio.agregar.length) continue;
     if (cambio.quitar.length) quitarDe.push(tarea.id);
     if (cambio.agregar.length) agregarA.push(tarea.id);
+    if (!tarea.necesidades.length && necesidades.length) {
+      await tx.tarea.update({
+        where: { id: tarea.id },
+        data: { necesidades: { connect: necesidades.map((n) => ({ id: n.id })) } },
+      });
+    }
     const despues = aplicarCambioOperarios(actuales, cambio);
     if (!despues.length) tareasSinOperario++;
     auditables.push({

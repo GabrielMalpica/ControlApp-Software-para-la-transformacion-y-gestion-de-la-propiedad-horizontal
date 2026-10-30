@@ -226,21 +226,42 @@ function makeFakePrisma() {
       if (where.operarios?.some) {
         out = out.filter((d) => d.operariosIds.length > 0);
       }
+      if (where.OR) {
+        out = out.filter((d) =>
+          where.OR.some((condicion: any) => {
+            if (condicion.necesidades?.some) {
+              return d.necesidadesIds.includes(condicion.necesidades.some.id);
+            }
+            if (condicion.necesidades?.none && condicion.operarios?.some) {
+              return (
+                d.necesidadesIds.length === 0 &&
+                d.operariosIds.includes(condicion.operarios.some.id)
+              );
+            }
+            return false;
+          }),
+        );
+      }
       if (where.necesidades?.some) {
         const plazaId = where.necesidades.some.id;
-        return out
-          .filter((d) => d.necesidadesIds.includes(plazaId))
-          .map((d) => ({
-            id: d.id,
-            necesidades: d.necesidadesIds.map((id) => ({
-              id,
-              operarioId: necesidades.get(id)?.operarioId ?? null,
-            })),
-          }));
+          return out
+            .filter((d) => d.necesidadesIds.includes(plazaId))
+            .map((d) => ({
+              id: d.id,
+              necesidades: d.necesidadesIds.map((id) => ({
+                id,
+                operarioId: necesidades.get(id)?.operarioId ?? null,
+              })),
+              operarios: d.operariosIds.map((id) => ({ id })),
+            }));
       }
       return out.map((d) => ({
         id: d.id,
         descripcion: d.descripcion,
+        necesidades: d.necesidadesIds.map((id) => ({
+          id,
+          operarioId: necesidades.get(id)?.operarioId ?? null,
+        })),
         operarios: d.operariosIds.map((id) => ({ id })),
       }));
     }),
@@ -248,7 +269,19 @@ function makeFakePrisma() {
       const def = definiciones.get(where.id);
       if (!def) throw new Error("no encontrado");
       if (data.necesidades?.connect) {
-        def.necesidadesIds = data.necesidades.connect.map((c: any) => c.id);
+        def.necesidadesIds = Array.from(
+          new Set([...def.necesidadesIds, ...data.necesidades.connect.map((c: any) => c.id)]),
+        );
+      }
+      if (data.operarios?.disconnect) {
+        def.operariosIds = def.operariosIds.filter(
+          (id) => !data.operarios.disconnect.some((o: any) => o.id === id),
+        );
+      }
+      if (data.operarios?.connect) {
+        def.operariosIds = Array.from(
+          new Set([...def.operariosIds, ...data.operarios.connect.map((o: any) => o.id)]),
+        );
       }
       return def;
     }),
@@ -266,13 +299,22 @@ function makeFakePrisma() {
       fechaInicio: Date;
       operariosIds: string[];
       necesidadesIds: number[];
+      definicionId?: number;
     }
   >();
   const tarea = {
     findMany: jest.fn(async ({ where }: any) => {
       return Array.from(tareas.values())
         .filter((t) => t.conjuntoId === where.conjuntoId)
-        .filter((t) => t.necesidadesIds.includes(where.necesidades.some.id))
+        .filter((t) =>
+          where.OR
+            ? where.OR.some((condicion: any) =>
+                condicion.necesidades
+                  ? t.necesidadesIds.includes(condicion.necesidades.some.id)
+                  : condicion.definicionId.in.includes(t.definicionId),
+              )
+            : t.necesidadesIds.includes(where.necesidades.some.id),
+        )
         .filter((t) => where.estado.in.includes(t.estado))
         .filter((t) => t.fechaInicio >= where.fechaInicio.gte)
         .map((t) => ({
@@ -280,12 +322,22 @@ function makeFakePrisma() {
           descripcion: t.descripcion,
           periodoAnio: 2026,
           periodoMes: 10,
+          definicionId: t.definicionId ?? null,
           operarios: t.operariosIds.map((id) => ({ id })),
           necesidades: t.necesidadesIds.map((id) => ({
             id,
             operarioId: necesidades.get(id)?.operarioId ?? null,
           })),
         }));
+    }),
+    update: jest.fn(async ({ where, data }: any) => {
+      const t = tareas.get(where.id);
+      if (t && data.necesidades?.connect) {
+        t.necesidadesIds = Array.from(
+          new Set([...t.necesidadesIds, ...data.necesidades.connect.map((n: any) => n.id)]),
+        );
+      }
+      return t;
     }),
   };
 
@@ -363,6 +415,7 @@ function makeFakePrisma() {
       fechaInicio: Date;
       operariosIds: string[];
       necesidadesIds: number[];
+      definicionId?: number;
     }) =>
       tareas.set(t.id, {
         conjuntoId: "C-1",
@@ -772,6 +825,38 @@ describe("ConjuntoNecesidadService - cambio de titular llega al cronograma", () 
     expect(fake.operariosDeTarea(4).sort()).toEqual(["juanito", "maria"]);
     expect(fake.operariosDeTarea(5)).toEqual(["carlos"]);
     expect(fake.prisma.auditoriaEvento.createMany).toHaveBeenCalledTimes(1);
+  });
+
+  test("también sincroniza tareas publicadas antiguas vinculadas solo por definicionId", async () => {
+    const fake = escenario();
+    const service = new ConjuntoNecesidadService(fake.prisma, "C-1");
+    const plaza = await service.crear({
+      roles: ["TODERO"],
+      etiqueta: "Todero #1",
+      operarioId: "pepito",
+    });
+    fake.seedDefinicion({
+      id: 71,
+      conjuntoId: "C-1",
+      descripcion: "Barrer",
+      operariosIds: ["pepito"],
+    });
+    fake.vincularDefinicion(71, [plaza.id]);
+    fake.seedTarea({
+      id: 71,
+      fechaInicio: manana(),
+      operariosIds: ["pepito"],
+      necesidadesIds: [],
+      definicionId: 71,
+    });
+
+    const out = await service.asignarOperario(plaza.id, {
+      operarioId: "juanito",
+      reemplazar: true,
+    });
+
+    expect(out.cronograma.tareasActualizadas).toBe(1);
+    expect(fake.operariosDeTarea(71)).toEqual(["juanito"]);
   });
 
   test("liberar deja las actividades sin el titular que se fue y asignar se las entrega al nuevo", async () => {
