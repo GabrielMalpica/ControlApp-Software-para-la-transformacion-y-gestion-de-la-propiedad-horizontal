@@ -21,9 +21,44 @@ import '../utils/duration_format.dart';
 import '../utils/schedule_utils.dart';
 import '../widgets/section_card.dart';
 import '../widgets/searchable_select_field.dart';
+import '../widgets/cronograma/impacto_especial_dialog.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
+
+/// Plaza(s) activa(s) que ocupa hoy cada operario del conjunto, por id.
+Map<String, String> plazasPorOperario(Conjunto conjunto) {
+  final out = <String, String>{};
+  for (final n in conjunto.necesidades) {
+    final id = (n.operarioId ?? '').trim();
+    if (!n.activo || id.isEmpty) continue;
+    final etiqueta = n.etiqueta.trim();
+    out.update(
+      id,
+      (actual) => etiqueta.isEmpty ? actual : '$actual, $etiqueta',
+      ifAbsent: () => etiqueta,
+    );
+  }
+  return out;
+}
+
+/// Operarios que se pueden asignar a una tarea del conjunto: quienes ocupan
+/// hoy una plaza activa. La relación directa conjunto-operario conserva a
+/// quienes ya rotaron de plaza, así que solo se usa entera si el conjunto aún
+/// no tiene plazas ocupadas. [conservarIds] (los de una tarea que se edita)
+/// se mantienen aunque ya no tengan plaza.
+List<Usuario> operariosParaAsignar(
+  Conjunto conjunto, {
+  Iterable<String> conservarIds = const [],
+}) {
+  final titulares = plazasPorOperario(conjunto);
+  if (titulares.isEmpty) return conjunto.operarios;
+  final conservar = conservarIds.map((id) => id.trim()).toSet();
+  return conjunto.operarios.where((op) {
+    final id = op.cedula.trim();
+    return titulares.containsKey(id) || conservar.contains(id);
+  }).toList();
+}
 
 class CrearTareaPage extends StatefulWidget {
   final String nit;
@@ -76,6 +111,10 @@ class CorrectivaSchedulerForm extends StatefulWidget {
   /// el cronograma la muestre en la bandeja de arrastre.
   final ValueChanged<ActividadEspecialPendiente>? onPendienteCreada;
 
+  /// En modo pendiente: la actividad de la bandeja que se está editando
+  /// (se devuelve con el mismo `localId` para reemplazarla).
+  final ActividadEspecialPendiente? pendienteInicial;
+
   const CorrectivaSchedulerForm({
     super.key,
     required this.nit,
@@ -85,6 +124,7 @@ class CorrectivaSchedulerForm extends StatefulWidget {
     this.onCreated,
     this.existingTask,
     this.onPendienteCreada,
+    this.pendienteInicial,
   });
 
   @override
@@ -131,6 +171,9 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
   // Operarios
   List<Usuario> _operarios = [];
   final List<String> _operariosSeleccionadosIds = [];
+
+  /// Plaza(s) que ocupa hoy cada operario del conjunto (id -> etiqueta).
+  Map<String, String> _plazaPorOperario = {};
 
   // Supervisores
   List<Usuario> _supervisores = [];
@@ -215,7 +258,9 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
           ? <Conjunto>[await _gerenteApi.obtenerConjunto(widget.nit)]
           : await _gerenteApi.listarConjuntos();
       final supervisores = await _gerenteApi.listarSupervisores();
-      final maquinariaDisp = await _empresaApi.listarMaquinariaDisponible();
+      final maquinariaDisp = await _empresaApi.listarMaquinariaDisponible(
+        conjuntoId: widget.nit,
+      );
 
       Conjunto? seleccionado;
       if (conjuntos.isNotEmpty) {
@@ -259,49 +304,106 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
       _elementos = [];
       _elementoSeleccionado = null;
 
-      _operarios = conjunto.operarios;
+      _plazaPorOperario = plazasPorOperario(conjunto);
+      _operarios = operariosParaAsignar(
+        conjunto,
+        conservarIds:
+            widget.existingTask?.operariosIds ??
+            widget.pendienteInicial?.operariosIds ??
+            const [],
+      );
       _operariosSeleccionadosIds.clear();
 
       _maquinariaSeleccionadaIds.clear();
       _herramientasSeleccionadas.clear();
-      if (widget.existingTask == null) {
+      if (widget.existingTask == null && widget.pendienteInicial == null) {
         _supervisorId = null;
       }
     });
 
     final existing = widget.existingTask;
-    if (existing != null) {
+    final pendiente = widget.pendienteInicial;
+    if (existing != null || pendiente != null) {
       _operariosSeleccionadosIds
         ..clear()
-        ..addAll(existing.operariosIds);
-      _supervisorId = existing.supervisorId;
+        ..addAll(existing?.operariosIds ?? pendiente!.operariosIds);
+      _supervisorId = existing?.supervisorId ?? pendiente!.supervisorId;
+      final ubicacionId = existing?.ubicacionId ?? pendiente!.ubicacionId;
+      final elementoId = existing?.elementoId ?? pendiente!.elementoId;
       final ubicacion = conjunto.ubicaciones
-          .where((u) => u.id == existing.ubicacionId)
+          .where((u) => u.id == ubicacionId)
           .toList();
       if (ubicacion.isNotEmpty) {
         _ubicacionSeleccionada = ubicacion.first;
         _elementos = _ubicacionSeleccionada!.elementosHoja;
-        final elemento = _elementos
-            .where((e) => e.id == existing.elementoId)
-            .toList();
+        final elemento = _elementos.where((e) => e.id == elementoId).toList();
         if (elemento.isNotEmpty) {
           _elementoSeleccionado = elemento.first;
         }
       }
       _maquinariaSeleccionadaIds
         ..clear()
-        ..addAll(existing.maquinariasAsignadas.map((m) => m.maquinariaId));
+        ..addAll(
+          existing != null
+              ? existing.maquinariasAsignadas.map((m) => m.maquinariaId)
+              : pendiente!.maquinariaIds,
+        );
       _herramientasSeleccionadas
         ..clear()
         ..addEntries(
-          existing.herramientasAsignadas.map(
-            (h) => MapEntry(h.herramientaId, h.cantidad),
-          ),
+          existing != null
+              ? existing.herramientasAsignadas.map(
+                  (h) => MapEntry(h.herramientaId, h.cantidad),
+                )
+              : pendiente!.herramientas.map(
+                  (h) => MapEntry(
+                    (h['herramientaId'] as num).toInt(),
+                    (h['cantidad'] as num?) ?? 1,
+                  ),
+                ),
         );
     }
 
     _cargarLimiteSemana(conjunto.nit);
     _cargarHerramientasConjunto(conjunto.nit);
+    if (conjunto.nit != widget.nit) _cargarMaquinariaConjunto(conjunto.nit);
+    if (!widget.embedded && conjunto.necesidades.isEmpty) {
+      _cargarPlazasConjunto(conjunto.nit);
+    }
+  }
+
+  /// Máquinas de la empresa y las propias del conjunto elegido.
+  Future<void> _cargarMaquinariaConjunto(String nit) async {
+    try {
+      final lista = await _empresaApi.listarMaquinariaDisponible(
+        conjuntoId: nit,
+      );
+      if (!mounted || _conjuntoSeleccionado?.nit != nit) return;
+      setState(() => _maquinariaDisponible = lista);
+    } catch (_) {
+      // Se conserva la lista que ya había.
+    }
+  }
+
+  /// La lista general de conjuntos no trae las plazas: se piden aparte para
+  /// ofrecer solo a quienes las ocupan hoy.
+  Future<void> _cargarPlazasConjunto(String nit) async {
+    try {
+      final completo = await _gerenteApi.obtenerConjunto(nit);
+      if (!mounted || _conjuntoSeleccionado?.nit != nit) return;
+      setState(() {
+        _plazaPorOperario = plazasPorOperario(completo);
+        _operarios = operariosParaAsignar(
+          completo,
+          conservarIds: {
+            ..._operariosSeleccionadosIds,
+            ...?widget.existingTask?.operariosIds,
+          },
+        );
+      });
+    } catch (_) {
+      // Sin las plazas se ofrecen todos los operarios del conjunto.
+    }
   }
 
   void _aplicarProgramacionInicial() {
@@ -342,6 +444,16 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
       return;
     }
 
+    final pendiente = widget.pendienteInicial;
+    if (pendiente != null) {
+      _descripcionCtrl.text = pendiente.descripcion;
+      _duracionCtrl.text = pendiente.duracionMinutos.toString();
+      _observacionesCtrl.text = pendiente.observaciones ?? '';
+      _prioridad = pendiente.prioridad;
+      _supervisorId = pendiente.supervisorId;
+      return;
+    }
+
     final inicio = widget.initialStart;
     if (inicio != null) {
       fechaInicio = DateTime(inicio.year, inicio.month, inicio.day);
@@ -378,7 +490,9 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
       if (!mounted) return;
       setState(() {
         _herramientasDisponibles = acumulado
-          ..sort((a, b) => a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase()));
+          ..sort(
+            (a, b) => a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase()),
+          );
       });
     } catch (_) {
       if (!mounted) return;
@@ -440,16 +554,37 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
                   ),
                   child: ListView.builder(
                     shrinkWrap: true,
-                    itemCount: _operarios.length,
+                    itemCount:
+                        _operarios.length + (_plazaPorOperario.isEmpty ? 0 : 1),
                     itemBuilder: (_, index) {
+                      if (_plazaPorOperario.isNotEmpty) {
+                        if (index == 0) {
+                          return const Padding(
+                            padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                            child: Text(
+                              'Quienes ocupan hoy una plaza de este conjunto.',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                color: Colors.black54,
+                              ),
+                            ),
+                          );
+                        }
+                        index -= 1;
+                      }
                       final op = _operarios[index];
                       final opId = op.cedula.trim();
                       if (opId.isEmpty) return const SizedBox.shrink();
                       final checked = seleccionTemp.contains(opId);
+                      final plaza = _plazaPorOperario[opId];
                       return CheckboxListTile(
                         value: checked,
                         title: Text(op.nombre),
-                        subtitle: Text('Cédula: ${op.cedula}'),
+                        subtitle: Text(
+                          plaza == null
+                              ? 'Cédula: ${op.cedula}'
+                              : '$plaza · Cédula: ${op.cedula}',
+                        ),
                         onChanged: (v) {
                           if (v == true) {
                             seleccionTemp.add(opId);
@@ -546,7 +681,12 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
                             return CheckboxListTile(
                               value: checked,
                               title: Text('${m.nombre} (${m.marca})'),
-                              subtitle: Text(m.tipo.label),
+                              subtitle: Text(
+                                m.propietarioTipo ==
+                                        PropietarioMaquinaria.CONJUNTO
+                                    ? '${m.tipo.label} · del conjunto'
+                                    : m.tipo.label,
+                              ),
                               onChanged: (v) {
                                 if (v == true) {
                                   seleccionTemp.add(m.id);
@@ -614,7 +754,6 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
                 h.categoria.label,
               ].join(' ').toLowerCase().contains(q);
             }).toList();
-
 
             return AlertDialog(
               title: const Text('Herramientas para la tarea'),
@@ -1753,7 +1892,9 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
     }
 
     final pendiente = ActividadEspecialPendiente(
-      localId: DateTime.now().microsecondsSinceEpoch.toString(),
+      localId:
+          widget.pendienteInicial?.localId ??
+          DateTime.now().microsecondsSinceEpoch.toString(),
       descripcion: _descripcionCtrl.text.trim(),
       prioridad: _prioridad,
       duracionMinutos: duracionMin,
@@ -1779,6 +1920,75 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
     widget.onPendienteCreada!(pendiente);
     if (!mounted) return;
     Navigator.of(context).pop(true);
+  }
+
+  /// Guarda los cambios de una correctiva ya programada (hora, duración,
+  /// operarios...). Si ahora pisa otras tareas, muestra la misma revisión
+  /// que al ubicarla (qué se reemplaza a cada persona, huecos, lo que lo
+  /// impide y un horario libre) y reemplaza las confirmadas al guardar.
+  Future<void> _guardarEdicion(TareaRequest req) async {
+    final tareaId = widget.existingTask!.id;
+    var actual = req;
+    for (var intento = 0; intento < 4; intento++) {
+      final impacto = await _tareaApi.previsualizarImpactoCorrectiva(
+        actual,
+        tareaId: tareaId,
+      );
+      if (!mounted) return;
+
+      var motivo = '';
+      if (!impacto.directo) {
+        final decision = await mostrarImpactoEspecialDialog(
+          context,
+          descripcion: actual.descripcion,
+          etiqueta: etiquetaCorrectiva(),
+          impacto: impacto,
+        );
+        if (decision == null || !mounted) return;
+        if (decision.usarSugerencia && impacto.sugerenciaInicio != null) {
+          final ini = impacto.sugerenciaInicio!;
+          setState(() {
+            fechaInicio = DateTime(ini.year, ini.month, ini.day);
+            fechaFin = fechaInicio;
+            _horaInicio = TimeOfDay(hour: ini.hour, minute: ini.minute);
+          });
+          actual = actual.copyWith(
+            fechaInicio: ini,
+            fechaFin: ini.add(Duration(minutes: actual.duracionMinutos)),
+          );
+          continue;
+        }
+        if (!impacto.puedeProgramar) return;
+        motivo = decision.motivo;
+      }
+
+      final editResp = await editarTareaConRecursos(
+        context,
+        api: _tareaApi,
+        tareaId: tareaId,
+        req: actual,
+        reemplazarIds: impacto.reemplazarIds,
+        motivoReemplazo: motivo.isEmpty ? null : motivo,
+      );
+      if (!mounted || editResp == null) return;
+      if (editResp['reason'] == 'HAY_SOLAPE_CON_TAREAS_EXISTENTES') {
+        AppFeedback.showFromSnackBar(
+          context,
+          const SnackBar(
+            content: Text(
+              'La agenda cambió mientras revisabas. Revisa de nuevo lo que se reemplaza.',
+            ),
+          ),
+        );
+        continue;
+      }
+      if (editResp['ok'] == false) {
+        await _mostrarErrorBackend(editResp);
+        return;
+      }
+      await _onSuccess();
+      return;
+    }
   }
 
   Future<void> _guardarTarea() async {
@@ -1865,9 +2075,13 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
       return;
     }
 
-    final okSemana = await _validarLimiteSemanal(inicio, duracionMin);
-    if (!mounted) return;
-    if (!okSemana) return;
+    // Al editar, el servidor revisa el límite semanal sin contar la propia
+    // tarea ni lo que se reemplace (aquí se contaría dos veces).
+    if (widget.existingTask == null) {
+      final okSemana = await _validarLimiteSemanal(inicio, duracionMin);
+      if (!mounted) return;
+      if (!okSemana) return;
+    }
 
     setState(() => _guardando = true);
 
@@ -1894,18 +2108,7 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
       );
 
       if (widget.existingTask != null) {
-        final editResp = await editarTareaConRecursos(
-          context,
-          api: _tareaApi,
-          tareaId: widget.existingTask!.id,
-          req: req,
-        );
-        if (!mounted || editResp == null) return;
-        if (editResp['ok'] == false) {
-          await _mostrarErrorBackend(editResp);
-          return;
-        }
-        await _onSuccess();
+        await _guardarEdicion(req);
         return;
       }
 
@@ -2534,7 +2737,14 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
                     child: Text(
                       _operariosSeleccionadosIds.isEmpty
                           ? "Seleccionar operario(s)"
-                          : "${_operariosSeleccionadosIds.length} operario(s) seleccionado(s)",
+                          : _operarios
+                                .where(
+                                  (o) => _operariosSeleccionadosIds.contains(
+                                    o.cedula.trim(),
+                                  ),
+                                )
+                                .map((o) => o.nombre)
+                                .join(', '),
                     ),
                   ),
                 ),
@@ -2602,8 +2812,15 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
               ),
             ),
             const SizedBox(height: 32),
-          ] else
-            const SizedBox(height: 32),
+          ] else ...[
+            const SizedBox(height: 16),
+            const Text(
+              'Las máquinas y herramientas reservadas se mueven con la tarea. '
+              'Para cambiarlas usa la agenda de recursos.',
+              style: TextStyle(fontSize: 12.5, color: Colors.black54),
+            ),
+            const SizedBox(height: 24),
+          ],
           ElevatedButton.icon(
             onPressed: _guardando ? null : _guardarTarea,
             icon: _guardando
@@ -2619,7 +2836,8 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
             label: Text(
               _guardando
                   ? "Guardando..."
-                  : widget.existingTask != null
+                  : widget.existingTask != null ||
+                        widget.pendienteInicial != null
                   ? "Guardar cambios"
                   : _modoPendiente
                   ? "Guardar y ubicar en el cronograma"

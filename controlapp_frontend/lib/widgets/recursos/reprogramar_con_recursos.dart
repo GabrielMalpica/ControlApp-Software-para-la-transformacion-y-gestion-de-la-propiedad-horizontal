@@ -13,6 +13,9 @@ import 'package:flutter_application_1/widgets/recursos/recurso_conflict_dialog.d
 /// Aquí se muestra el conflicto y, solo si el usuario lo decide, se reintenta
 /// liberando esos recursos (quedan cancelados en el histórico).
 ///
+/// [reemplazarIds]/[motivoReemplazo]: correctivas que al editarse reemplazan
+/// preventivas (las ids salen de la previsualización del impacto).
+///
 /// Devuelve la respuesta final del backend, o `null` si el usuario decidió no
 /// mover la tarea.
 Future<Map<String, dynamic>?> editarTareaConRecursos(
@@ -20,19 +23,35 @@ Future<Map<String, dynamic>?> editarTareaConRecursos(
   required TareaApi api,
   required int tareaId,
   required TareaRequest req,
+  List<int> reemplazarIds = const [],
+  String? motivoReemplazo,
 }) async {
-  final resp = await api.editarTareaConRespuesta(tareaId, req);
+  final resp = await api.editarTareaConRespuesta(
+    tareaId,
+    req,
+    reemplazarIds: reemplazarIds,
+    motivoReemplazo: motivoReemplazo,
+  );
   if (!esConflictoRecursoMapa(resp)) return resp;
   if (!context.mounted) return null;
 
   final liberar = await mostrarConflictoRecursos(
     context,
     titulo: resp['title']?.toString() ?? 'La tarea tiene recursos ocupados',
-    mensaje: AppError.messageOf(resp, fallback: 'Un recurso reservado no está libre en el nuevo horario.'),
+    mensaje: AppError.messageOf(
+      resp,
+      fallback: 'Un recurso reservado no está libre en el nuevo horario.',
+    ),
     conflictos: ConflictoRecursoModel.desdeError(resp),
     ofrecerLiberar: true,
   );
   if (!liberar) return null;
 
-  return api.editarTareaConRespuesta(tareaId, req, liberarRecursosOcupados: true);
+  return api.editarTareaConRespuesta(
+    tareaId,
+    req,
+    liberarRecursosOcupados: true,
+    reemplazarIds: reemplazarIds,
+    motivoReemplazo: motivoReemplazo,
+  );
 }

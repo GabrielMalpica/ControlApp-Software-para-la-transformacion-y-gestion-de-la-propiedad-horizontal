@@ -163,9 +163,16 @@ class EmpresaApi {
         .toList();
   }
 
-  Future<List<MaquinariaResponse>> listarMaquinariaDisponible() async {
+  /// Máquinas de la empresa libres para prestar y, con [conjuntoId], también
+  /// las propias de ese conjunto.
+  Future<List<MaquinariaResponse>> listarMaquinariaDisponible({
+    String? conjuntoId,
+  }) async {
+    final query = conjuntoId == null || conjuntoId.trim().isEmpty
+        ? ''
+        : '?conjuntoId=${Uri.encodeQueryComponent(conjuntoId.trim())}';
     final resp = await _client.get(
-      '${AppConstants.baseUrl}/empresa/$_empresaNit/maquinaria/disponible',
+      '${AppConstants.baseUrl}/empresa/$_empresaNit/maquinaria/disponible$query',
     );
 
     if (resp.statusCode != 200) {

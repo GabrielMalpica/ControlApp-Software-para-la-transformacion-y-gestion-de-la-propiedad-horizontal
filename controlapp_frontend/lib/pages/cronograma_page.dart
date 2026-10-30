@@ -46,6 +46,9 @@ import '../model/maquinaria_model.dart';
 import '../utils/frecuencia_utils.dart';
 import '../widgets/section_card.dart';
 import '../widgets/maquinaria_conflict_dialog.dart';
+import 'package:flutter_application_1/utils/cronograma/impacto_especial.dart';
+import 'package:flutter_application_1/widgets/cronograma/arrastre_adaptable.dart';
+import 'package:flutter_application_1/widgets/cronograma/impacto_especial_dialog.dart';
 import '../widgets/evidencia_gallery.dart';
 import 'crear_tarea_page.dart';
 
@@ -88,6 +91,21 @@ class _EspecialDropPreview {
   final int laneCount;
   final int laneSpan;
 
+  /// Tareas que impiden ubicarla ahí (otra correctiva, prioridad más alta).
+  final List<int> bloqueadosIds;
+
+  /// Tareas afectadas que no se ven por el filtro de la vista.
+  final int ocultos;
+
+  /// Qué pasaría, en una línea ("Reemplaza 3 tareas de 2 personas").
+  final String? resumen;
+
+  /// Aclaración extra (festivo, se ajustó al horario...).
+  final String? nota;
+
+  /// Atenuar el resto del día para resaltar solo lo afectado.
+  final bool enfocar;
+
   const _EspecialDropPreview({
     required this.dayIndex,
     required this.startMinute,
@@ -102,6 +120,11 @@ class _EspecialDropPreview {
     this.lane = 0,
     this.laneCount = 1,
     this.laneSpan = 1,
+    this.bloqueadosIds = const [],
+    this.ocultos = 0,
+    this.resumen,
+    this.nota,
+    this.enfocar = false,
   });
 
   bool sameAs(_EspecialDropPreview? o) =>
@@ -118,6 +141,11 @@ class _EspecialDropPreview {
       o.laneCount == laneCount &&
       o.laneSpan == laneSpan &&
       o.choquesIds.length == choquesIds.length &&
+      o.bloqueadosIds.length == bloqueadosIds.length &&
+      o.ocultos == ocultos &&
+      o.resumen == resumen &&
+      o.nota == nota &&
+      o.enfocar == enfocar &&
       o.color == color;
 }
 
@@ -1228,7 +1256,10 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
   /// Abre el formulario de "Más opciones → Creación actividad especial":
   /// sin fecha/hora, entrega la pendiente para arrastrarla en el cronograma.
-  Future<void> _abrirCrearActividadEspecialModal() async {
+  /// Con [editar], cambia esa pendiente de la bandeja (duración, operarios...).
+  Future<void> _abrirCrearActividadEspecialModal({
+    ActividadEspecialPendiente? editar,
+  }) async {
     if (!_canScheduleCorrectivasInCronograma || !mounted) return;
 
     final etiqueta = etiquetaCorrectiva();
@@ -1274,7 +1305,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Nueva $etiqueta',
+                                  editar == null
+                                      ? 'Nueva $etiqueta'
+                                      : 'Editar $etiqueta pendiente',
                                   style: const TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.w800,
@@ -1282,8 +1315,10 @@ class _CronogramaPageState extends State<CronogramaPage> {
                                   ),
                                 ),
                                 const SizedBox(height: 4),
-                                const Text(
-                                  'Guárdala y luego arrástrala al horario que quieras en el cronograma.',
+                                Text(
+                                  editar == null
+                                      ? 'Guárdala y luego arrástrala al horario que quieras en el cronograma.'
+                                      : 'Los cambios quedan en la bandeja; luego arrástrala al horario que quieras.',
                                   style: TextStyle(
                                     color: Color(0xFF6D28D9),
                                     fontSize: 12,
@@ -1305,8 +1340,22 @@ class _CronogramaPageState extends State<CronogramaPage> {
                       child: CorrectivaSchedulerForm(
                         nit: widget.nit,
                         embedded: true,
+                        pendienteInicial: editar,
                         onPendienteCreada: (pendiente) {
-                          setState(() => _pendientes.add(pendiente));
+                          setState(() {
+                            final i = _pendientes.indexWhere(
+                              (p) => p.localId == pendiente.localId,
+                            );
+                            if (i >= 0) {
+                              _pendientes[i] = pendiente;
+                            } else {
+                              _pendientes.add(pendiente);
+                            }
+                            if (_pendienteEnUbicacion?.localId ==
+                                pendiente.localId) {
+                              _pendienteEnUbicacion = pendiente;
+                            }
+                          });
                         },
                       ),
                     ),
@@ -1357,13 +1406,26 @@ class _CronogramaPageState extends State<CronogramaPage> {
                       child: Row(
                         children: [
                           Expanded(
-                            child: Text(
-                              'Editar ${etiquetaCorrectiva(minuscula: true)}',
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w800,
-                                color: Color(0xFFA61E1E),
-                              ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Editar ${etiquetaCorrectiva(minuscula: true)}',
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFFA61E1E),
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                const Text(
+                                  'Cambia la hora, la duración o los operarios. Si choca con otras tareas, antes de guardar verás cuáles se reemplazan.',
+                                  style: TextStyle(
+                                    color: Color(0xFFA61E1E),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                           IconButton(
@@ -4611,121 +4673,149 @@ class _CronogramaPageState extends State<CronogramaPage> {
     );
   }
 
+  /// Actividades publicadas de la semana sin los filtros de la vista: al
+  /// arrastrar una actividad especial se ve a quién afecta aunque la persona
+  /// esté oculta por un filtro.
+  List<TareaModel> _agendaSemana(DateTime semanaBase) {
+    final start = _startOfWeekMonday(semanaBase);
+    final end = start.add(const Duration(days: 7));
+    return _fuenteTareas.where((t) {
+      final dt = t.fechaInicio.toLocal();
+      return !dt.isBefore(start) &&
+          dt.isBefore(end) &&
+          !_esCanceladaPorReemplazo(t);
+    }).toList();
+  }
+
   /// Ubica una actividad especial pendiente (arrastrada o "tocar para
-  /// ubicar") en el horario elegido. Sin [tareaReemplazo] se crea sobre un
-  /// hueco libre; con ella, se pide confirmación y reemplaza la preventiva
-  /// (queda NO_COMPLETADA, como el resto del flujo de reemplazo).
+  /// ubicar") en el horario elegido. Primero pregunta al servidor qué
+  /// pasaría: las tareas de TODOS sus operarios que se reemplazarían, los
+  /// huecos que les quedan y lo que lo impide. Libre se guarda de una vez; si
+  /// hay reemplazos, avisos o bloqueos se muestra la revisión (con un horario
+  /// libre sugerido) y se reemplazan todas las tareas confirmadas.
   Future<void> _programarActividadEspecial({
     required ActividadEspecialPendiente pendiente,
     required DateTime nuevoInicio,
     required DateTime nuevoFin,
-    TareaModel? tareaReemplazo,
   }) async {
     if (_guardandoPendiente) return;
 
     final etiqueta = etiquetaCorrectiva();
-    String? motivoReemplazo;
-
-    if (tareaReemplazo != null) {
-      final confirmar = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('Reemplazar preventiva publicada'),
-          content: Text(
-            '"${pendiente.descripcion}" se programará sobre la preventiva '
-            '"${tareaReemplazo.descripcion}" '
-            '(${DateFormat("HH:mm").format(tareaReemplazo.fechaInicio.toLocal())} - '
-            '${DateFormat("HH:mm").format(tareaReemplazo.fechaFin.toLocal())}, '
-            'P${tareaReemplazo.prioridad}). '
-            'La preventiva quedará en no completada. ¿Deseas continuar?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancelar'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Reemplazar'),
-            ),
-          ],
-        ),
-      );
-      if (confirmar != true || !mounted) return;
-
-      motivoReemplazo = await _pedirMotivoReemplazoOpcional();
-      if (!mounted) return;
-      if (motivoReemplazo == null) return;
-    }
+    var inicio = nuevoInicio;
+    var fin = nuevoFin;
 
     setState(() => _guardandoPendiente = true);
     try {
-      final req = pendiente.toRequest(
-        conjuntoId: widget.nit,
-        inicio: nuevoInicio,
-        fin: nuevoFin,
-      );
-
-      final resp = tareaReemplazo != null
-          ? await _tareaApi.crearTareaConReemplazo(
-              tarea: req,
-              reemplazarIds: [tareaReemplazo.id],
-              accionReemplazadas: 'CANCELAR',
-              motivoReemplazo: motivoReemplazo!.isEmpty
-                  ? null
-                  : motivoReemplazo,
-            )
-          : await _tareaApi.crearTarea(req);
-
-      if (!mounted) return;
-
-      if (resp['needsReplacement'] == true) {
-        AppFeedback.showFromSnackBar(
-          context,
-          SnackBar(
-            content: Text(
-              'Ese horario ya no está libre para "${pendiente.descripcion}". '
-              'Suéltala en otra franja libre o sobre la preventiva que quieras reemplazar.',
-            ),
-          ),
+      // Se repite si el usuario elige el horario sugerido o si la agenda
+      // cambió entre la revisión y el guardado.
+      for (var intento = 0; intento < 4; intento++) {
+        final req = pendiente.toRequest(
+          conjuntoId: widget.nit,
+          inicio: inicio,
+          fin: fin,
         );
-        return;
-      }
+        final impacto = await _tareaApi.previsualizarImpactoCorrectiva(req);
+        if (!mounted) return;
 
-      if (resp['ok'] == false) {
-        AppFeedback.showFromSnackBar(
-          context,
-          SnackBar(
-            content: Text(
-              (resp['message'] ?? 'No se pudo programar la $etiqueta.')
-                  .toString(),
-            ),
-          ),
-        );
-        return;
-      }
-
-      setState(() {
-        _pendientes.removeWhere((p) => p.localId == pendiente.localId);
-        if (_pendienteEnUbicacion?.localId == pendiente.localId) {
-          _pendienteEnUbicacion = null;
+        var motivo = '';
+        if (!impacto.directo) {
+          final decision = await mostrarImpactoEspecialDialog(
+            context,
+            descripcion: pendiente.descripcion,
+            etiqueta: etiqueta,
+            impacto: impacto,
+          );
+          if (decision == null || !mounted) return;
+          if (decision.usarSugerencia && impacto.sugerenciaInicio != null) {
+            inicio = impacto.sugerenciaInicio!;
+            fin = inicio.add(Duration(minutes: pendiente.duracionMinutos));
+            continue;
+          }
+          if (!impacto.puedeProgramar) return;
+          motivo = decision.motivo;
         }
-      });
 
-      await _cargarDatos();
-      if (!mounted) return;
-      AppFeedback.showFromSnackBar(
-        context,
-        SnackBar(
-          content: Text(
-            tareaReemplazo != null
-                ? '$etiqueta programada y preventiva reemplazada.'
-                : '$etiqueta programada correctamente.',
+        final resp = impacto.reemplazarIds.isEmpty
+            ? await _tareaApi.crearTarea(req)
+            : await _tareaApi.crearTareaConReemplazo(
+                tarea: req,
+                reemplazarIds: impacto.reemplazarIds,
+                accionReemplazadas: 'CANCELAR',
+                motivoReemplazo: motivo.isEmpty ? null : motivo,
+              );
+        if (!mounted) return;
+
+        final razon = (resp['reason'] ?? '').toString();
+        if (resp['needsReplacement'] == true ||
+            razon == 'REEMPLAZOS_NO_LIBERAN_ESPACIO' ||
+            razon == 'HAY_SOLAPE_CON_TAREAS_EXISTENTES') {
+          AppFeedback.showFromSnackBar(
+            context,
+            const SnackBar(
+              content: Text(
+                'La agenda cambió mientras revisabas. Revisa de nuevo lo que se reemplaza.',
+              ),
+            ),
+          );
+          continue;
+        }
+
+        if (resp['ok'] == false) {
+          if (hasMaquinariaConflictDetails(resp)) {
+            await showMaquinariaConflictDialog(
+              context,
+              resp,
+              fallbackTitle: 'Un recurso elegido no está libre',
+            );
+            return;
+          }
+          AppFeedback.showFromSnackBar(
+            context,
+            SnackBar(
+              content: Text(
+                (resp['message'] ?? 'No se pudo programar la $etiqueta.')
+                    .toString(),
+              ),
+            ),
+          );
+          return;
+        }
+
+        setState(() {
+          _pendientes.removeWhere((p) => p.localId == pendiente.localId);
+          if (_pendienteEnUbicacion?.localId == pendiente.localId) {
+            _pendienteEnUbicacion = null;
+          }
+        });
+
+        await _cargarDatos();
+        if (!mounted) return;
+        final horas =
+            '${DateFormat('HH:mm').format(inicio)}–${DateFormat('HH:mm').format(fin)}';
+        final n = impacto.reemplazarIds.length;
+        AppFeedback.showFromSnackBar(
+          context,
+          SnackBar(
+            content: Text(
+              n == 0
+                  ? '$etiqueta programada ($horas).'
+                  : '$etiqueta programada ($horas). '
+                        '${n == 1 ? 'Se reemplazó 1 tarea' : 'Se reemplazaron $n tareas'}.',
+            ),
           ),
-        ),
-      );
+        );
+        return;
+      }
     } catch (e) {
       if (!mounted) return;
+      if (hasMaquinariaConflictDetails(e)) {
+        await showMaquinariaConflictDialog(
+          context,
+          e,
+          fallbackTitle: 'Un recurso elegido no está libre',
+        );
+        return;
+      }
       AppFeedback.showFromSnackBar(
         context,
         SnackBar(content: Text(AppError.messageOf(e))),
@@ -4842,6 +4932,17 @@ class _CronogramaPageState extends State<CronogramaPage> {
                 ),
               ),
               IconButton(
+                tooltip: 'Editar',
+                onPressed: () =>
+                    _abrirCrearActividadEspecialModal(editar: pendiente),
+                icon: const Icon(
+                  Icons.edit_outlined,
+                  size: 18,
+                  color: Color(0xFF6D28D9),
+                ),
+                visualDensity: VisualDensity.compact,
+              ),
+              IconButton(
                 tooltip: 'Quitar',
                 onPressed: () => _confirmarQuitarPendiente(pendiente),
                 icon: const Icon(
@@ -4857,7 +4958,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
       ),
     );
 
-    return LongPressDraggable<_DraggedWeekEspecial>(
+    return ArrastreAdaptable<_DraggedWeekEspecial>(
       data: _DraggedWeekEspecial(pendiente: pendiente),
       dragAnchorStrategy: pointerDragAnchorStrategy,
       onDragStarted: () => _weekEspecialDragActiveNotifier.value = true,
@@ -4881,6 +4982,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
   Widget _buildAgendaSemanal() {
     final weekStart = _startOfWeekMonday(_semanaBase);
     final tareas = _tareasSemana(_semanaBase);
+    final agendaSemana = _agendaSemana(_semanaBase);
     final tareasResumenOperarios = _tareasSemanaResumenOperarios(_semanaBase);
     final resumenSemana = _calcularResumenHorasSemana(
       weekStart,
@@ -5014,6 +5116,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
                       dias: _diaFoco == null ? 7 : 1,
                       onFocoDia: _enfocarDia,
                       tareas: tareas,
+                      tareasAgenda: agendaSemana,
                       horariosConjunto: _horariosConjunto,
                       scaleMinutes: _escalaSemanalMinutos,
                       horaInicio: _horaInicioJornada,
@@ -5092,6 +5195,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
                   dias: _diaFoco == null ? 7 : 1,
                   onFocoDia: _enfocarDia,
                   tareas: tareas,
+                  tareasAgenda: agendaSemana,
                   horariosConjunto: _horariosConjunto,
                   scaleMinutes: _escalaSemanalMinutos,
                   horaInicio: _horaInicioJornada,
@@ -5571,9 +5675,13 @@ class _WeekScheduleView extends StatefulWidget {
     required ActividadEspecialPendiente pendiente,
     required DateTime nuevoInicio,
     required DateTime nuevoFin,
-    TareaModel? tareaReemplazo,
   })?
   onProgramarActividadEspecial;
+
+  /// Actividades de la semana sin los filtros de la vista (vacía = [tareas]):
+  /// al ubicar una actividad especial se revisan las tareas de todos sus
+  /// operarios, también las de quien esté oculto por un filtro.
+  final List<TareaModel> tareasAgenda;
 
   /// Pendiente que el usuario activó con "Ubicar" en la bandeja: mientras no
   /// sea null, tocar un hueco o una preventiva ubica esa actividad especial
@@ -5598,6 +5706,7 @@ class _WeekScheduleView extends StatefulWidget {
     this.onProgramExcluidaComoCorrectiva,
     this.onProgramarActividadEspecial,
     this.pendienteEnUbicacion,
+    this.tareasAgenda = const [],
   });
 
   @override
@@ -5721,8 +5830,6 @@ class _DraggedWeekEspecial {
 }
 
 enum _ExcluidaDropState { none, allowed, blocked }
-
-enum _EspecialDropState { none, allowed, blocked }
 
 class _WeekScheduleViewState extends State<_WeekScheduleView> {
   int get _dias => widget.dias.clamp(1, 7);
@@ -5944,6 +6051,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     int? excluirTareaId,
     required int dayIndex,
     required int desiredMinuteOfDay,
+    Set<String> operariosIds = const {},
   }) {
     final rangosDisponibles = _rangosProgramablesDia(dayIndex);
     if (rangosDisponibles.isEmpty) return null;
@@ -5955,9 +6063,11 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
       return null;
     }
 
-    final spans = (_occupiedRangesByDay[dayIndex] ?? const <_MinuteRange>[])
-        .where((range) => range.tareaId != excluirTareaId)
-        .toList();
+    final spans = _ocupadosDia(
+      dayIndex,
+      operariosIds: operariosIds,
+      excluirTareaId: excluirTareaId,
+    );
 
     var start = _snapToGridNearest(desiredMinuteOfDay);
     if (start < inicioJornada) start = _snapToGridForward(inicioJornada);
@@ -6003,23 +6113,6 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     return null;
   }
 
-  /// Modo "tocar para ubicar": con una pendiente activa (botón "Ubicar" en
-  /// la bandeja), tocar un hueco libre la programa ahí mismo, sin arrastre.
-  Future<void> _handleTapEnHueco({
-    required BuildContext context,
-    required TapUpDetails details,
-    required int dayIndex,
-    required double localTop,
-  }) async {
-    final pendiente = widget.pendienteEnUbicacion;
-    if (pendiente == null) return;
-    await _intentarProgramarEspecialEnHueco(
-      dragged: _DraggedWeekEspecial(pendiente: pendiente),
-      dayIndex: dayIndex,
-      localDy: localTop,
-    );
-  }
-
   Future<void> _intentarMoverCorrectivaSemana({
     required _DraggedWeekTask dragged,
     required int dayIndex,
@@ -6047,6 +6140,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
       excluirTareaId: dragged.tarea.id,
       dayIndex: dayIndex,
       desiredMinuteOfDay: minuteOfDay,
+      operariosIds: dragged.tarea.operariosIds.toSet(),
     );
 
     if (startMinute == null) {
@@ -6130,6 +6224,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
       duracionMinutos: dragged.excluida.duracionMinutos,
       dayIndex: dayIndex,
       desiredMinuteOfDay: minuteOfDay,
+      operariosIds: dragged.excluida.operariosIds.toSet(),
     );
 
     if (startMinute == null) {
@@ -6206,39 +6301,47 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     );
   }
 
-  List<Widget> _buildTapTargets(BuildContext context, double colWidth) {
-    if (widget.pendienteEnUbicacion == null) return const [];
+  /// Modo "tocar para ubicar" (botón "Ubicar" de la bandeja): tocar cualquier
+  /// punto del día —un hueco o encima de tareas— ubica ahí la actividad. Con
+  /// mouse, al pasar por encima se ve la misma previsualización del arrastre.
+  List<Widget> _buildTapTargets(
+    BuildContext context,
+    double colWidth,
+    double heightGrid,
+  ) {
+    final pendiente = widget.pendienteEnUbicacion;
+    if (pendiente == null) return const [];
 
-    final widgets = <Widget>[];
-    for (int dayIndex = 0; dayIndex < _dias; dayIndex++) {
-      final rangos = _rangosProgramablesDia(dayIndex);
-      for (final rango in rangos) {
-        final top = (rango.start - (_horaInicio * 60)) * pxPorMin;
-        final height = (rango.end - rango.start) * pxPorMin;
-        widgets.add(
-          Positioned(
-            left: anchoHora + dayIndex * colWidth,
-            width: colWidth,
-            top: top,
-            height: height,
+    return [
+      for (int dayIndex = 0; dayIndex < _dias; dayIndex++)
+        Positioned(
+          left: anchoHora + dayIndex * colWidth,
+          top: 0,
+          width: colWidth,
+          height: heightGrid,
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            onHover: (event) => _actualizarPreviewEspecial(
+              pendiente: pendiente,
+              dayIndex: dayIndex,
+              localDy: event.localPosition.dy,
+            ),
+            onExit: (_) => _setEspecialPreview(null),
             child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onTapUp: (details) => _handleTapEnHueco(
-                context: context,
-                details: details,
-                dayIndex: dayIndex,
-                localTop: top + details.localPosition.dy,
-              ),
-              child: MouseRegion(
-                cursor: SystemMouseCursors.click,
-                child: Container(color: Colors.transparent),
-              ),
+              behavior: HitTestBehavior.opaque,
+              onTapUp: (details) async {
+                _setEspecialPreview(null);
+                await _soltarEspecial(
+                  pendiente: pendiente,
+                  dayIndex: dayIndex,
+                  localDy: details.localPosition.dy,
+                );
+              },
+              child: const SizedBox.expand(),
             ),
           ),
-        );
-      }
-    }
-    return widgets;
+        ),
+    ];
   }
 
   List<Widget> _buildExcluidaDropTargets(double colWidth) {
@@ -6272,6 +6375,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                     color: _kColorPreviewExcluida,
                     dayIndex: dayIndex,
                     localDy: localDyDe(details.offset),
+                    operariosIds: details.data.excluida.operariosIds.toSet(),
                   ),
                   onLeave: (_) => _setEspecialPreview(null),
                   onAcceptWithDetails: (details) async {
@@ -6294,106 +6398,47 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     return widgets;
   }
 
-  Future<void> _intentarProgramarEspecialEnHueco({
-    required _DraggedWeekEspecial dragged,
-    required int dayIndex,
-    required double localDy,
-  }) async {
-    if (widget.onProgramarActividadEspecial == null) return;
+  DateTime _fechaDia(int dayIndex) => DateTime(
+    widget.weekStart.year,
+    widget.weekStart.month,
+    widget.weekStart.day,
+  ).add(Duration(days: dayIndex));
 
-    final targetDay = widget.weekStart.add(Duration(days: dayIndex));
-    if (widget.esFestivo(targetDay)) {
-      AppFeedback.showFromSnackBar(
-        context,
-        SnackBar(
-          content: Text(
-            'No puedes programar ${etiquetaCorrectiva(minuscula: true)}s en un día festivo.',
-          ),
-        ),
-      );
-      return;
-    }
-
-    final minuteFromGrid = (localDy / pxPorMin).round();
-    final minuteOfDay = (_horaInicio * 60) + minuteFromGrid;
-    final startMinute = _resolverInicioLibreEnDia(
-      duracionMinutos: dragged.pendiente.duracionMinutos,
-      dayIndex: dayIndex,
-      desiredMinuteOfDay: minuteOfDay,
-    );
-
-    if (startMinute == null) {
-      AppFeedback.showFromSnackBar(
-        context,
-        SnackBar(
-          content: Text(
-            'No hay un hueco libre válido para programar esta ${etiquetaCorrectiva(minuscula: true)}.',
-          ),
-        ),
-      );
-      return;
-    }
-
-    final nuevoInicio = DateTime(
-      targetDay.year,
-      targetDay.month,
-      targetDay.day,
-      startMinute ~/ 60,
-      startMinute % 60,
-    );
-    final nuevoFin = nuevoInicio.add(
-      Duration(minutes: dragged.pendiente.duracionMinutos),
-    );
-
-    await widget.onProgramarActividadEspecial!(
-      pendiente: dragged.pendiente,
-      nuevoInicio: nuevoInicio,
-      nuevoFin: nuevoFin,
-    );
+  /// Tareas del día en la agenda completa (sin los filtros de la vista): con
+  /// ellas se calcula a quién afecta lo que se arrastra, aunque esté oculto.
+  List<TareaModel> _agendaDia(int dayIndex) {
+    final dia = _fechaDia(dayIndex);
+    final fuente = widget.tareasAgenda.isEmpty
+        ? widget.tareas
+        : widget.tareasAgenda;
+    return [
+      for (final t in fuente)
+        if (tramoDeTareaEnDia(t, dia) != null) t,
+    ];
   }
 
-  Future<void> _intentarProgramarEspecialSobreTarea({
-    required _DraggedWeekEspecial dragged,
-    required TareaModel tareaObjetivo,
-  }) async {
-    if (widget.onProgramarActividadEspecial == null) return;
-    final tipo = (tareaObjetivo.tipo ?? '').trim().toUpperCase();
-    if (tipo != 'PREVENTIVA') {
-      AppFeedback.showFromSnackBar(
-        context,
-        SnackBar(
-          content: Text(
-            'Solo puedes ubicar una ${etiquetaCorrectiva(minuscula: true)} sobre una preventiva publicada.',
-          ),
-        ),
-      );
-      return;
+  /// Tramos ocupados del día. Con [operariosIds], solo las tareas de esas
+  /// personas en la agenda completa: lo que ocupa a otro operario no impide
+  /// ubicar algo de éstos. Sin ellos, todo lo que se ve en la cuadrícula.
+  List<_MinuteRange> _ocupadosDia(
+    int dayIndex, {
+    Set<String> operariosIds = const {},
+    int? excluirTareaId,
+  }) {
+    if (operariosIds.isEmpty) {
+      return (_occupiedRangesByDay[dayIndex] ?? const <_MinuteRange>[])
+          .where((range) => range.tareaId != excluirTareaId)
+          .toList();
     }
-    if (!_puedeReemplazarPreventiva(
-      prioridadCorrectiva: dragged.pendiente.prioridad,
-      prioridadPreventiva: tareaObjetivo.prioridad,
-    )) {
-      AppFeedback.showFromSnackBar(
-        context,
-        SnackBar(
-          content: Text(
-            'Una ${etiquetaCorrectiva(minuscula: true)} P${dragged.pendiente.prioridad} no puede reemplazar una preventiva P${tareaObjetivo.prioridad}.',
-          ),
-        ),
-      );
-      return;
-    }
-
-    final nuevoInicio = tareaObjetivo.fechaInicio.toLocal();
-    final nuevoFin = nuevoInicio.add(
-      Duration(minutes: dragged.pendiente.duracionMinutos),
-    );
-    await widget.onProgramarActividadEspecial!(
-      pendiente: dragged.pendiente,
-      nuevoInicio: nuevoInicio,
-      nuevoFin: nuevoFin,
-      tareaReemplazo: tareaObjetivo,
-    );
+    final dia = _fechaDia(dayIndex);
+    return [
+      for (final t in _agendaDia(dayIndex))
+        if (t.id != excluirTareaId &&
+            ocupaAgenda(t) &&
+            t.operariosIds.any(operariosIds.contains))
+          if (tramoDeTareaEnDia(t, dia) case final tramo?)
+            _MinuteRange(tareaId: t.id, start: tramo.inicio, end: tramo.fin),
+    ]..sort((a, b) => a.start.compareTo(b.start));
   }
 
   /// Ids de las tareas que ocupan el rango [inicio, inicio + duracion) del día.
@@ -6402,15 +6447,16 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     required int inicio,
     required int duracionMinutos,
     int? excluirTareaId,
+    Set<String> operariosIds = const {},
   }) {
     final fin = inicio + duracionMinutos;
     return [
-      for (final r in _occupiedRangesByDay[dayIndex] ?? const <_MinuteRange>[])
-        if (r.tareaId != null &&
-            r.tareaId != excluirTareaId &&
-            inicio < r.end &&
-            fin > r.start)
-          r.tareaId!,
+      for (final r in _ocupadosDia(
+        dayIndex,
+        operariosIds: operariosIds,
+        excluirTareaId: excluirTareaId,
+      ))
+        if (r.tareaId != null && inicio < r.end && fin > r.start) r.tareaId!,
     ];
   }
 
@@ -6425,6 +6471,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     required double localDy,
     int? excluirTareaId,
     bool permiteFestivo = false,
+    Set<String> operariosIds = const {},
   }) {
     final targetDay = widget.weekStart.add(Duration(days: dayIndex));
     final desired = (_horaInicio * 60) + (localDy / pxPorMin).round();
@@ -6435,6 +6482,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
             excluirTareaId: excluirTareaId,
             dayIndex: dayIndex,
             desiredMinuteOfDay: desired,
+            operariosIds: operariosIds,
           );
     final deseado = _snapToGridNearest(
       desired,
@@ -6444,6 +6492,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
       inicio: deseado,
       duracionMinutos: duracionMinutos,
       excluirTareaId: excluirTareaId,
+      operariosIds: operariosIds,
     );
     _setEspecialPreview(
       _EspecialDropPreview(
@@ -6498,57 +6547,185 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     );
   }
 
-  List<Widget> _buildEspecialDropTargets(double colWidth) {
+  /// Qué pasaría al ubicar [pendiente] en el punto [localDy] del día, con la
+  /// agenda que ya está cargada (las tareas de TODOS sus operarios, aunque la
+  /// vista esté filtrada). Al soltar, la página lo confirma con el servidor.
+  ImpactoLocalEspecial _impactoEspecial({
+    required ActividadEspecialPendiente pendiente,
+    required int dayIndex,
+    required double localDy,
+  }) {
+    final deseado = _snapToGridNearest(
+      (_horaInicio * 60) + (localDy / pxPorMin).round(),
+    );
+    return calcularImpactoLocalEspecial(
+      agendaDia: _agendaDia(dayIndex),
+      dia: _fechaDia(dayIndex),
+      operariosIds: pendiente.operariosIds.toSet(),
+      prioridad: pendiente.prioridad,
+      deseado: deseado,
+      duracion: pendiente.duracionMinutos,
+      rangosConjunto: [
+        for (final r in _rangosProgramablesDia(dayIndex))
+          TramoDia(r.start, r.end),
+      ],
+    );
+  }
+
+  String _quienesDe(ActividadEspecialPendiente p) {
+    final nombres = p.operariosNombres
+        .map((n) => n.trim())
+        .where((n) => n.isNotEmpty)
+        .toList();
+    if (nombres.isEmpty) return 'sus operarios';
+    if (nombres.length <= 2) return nombres.join(' y ');
+    return '${nombres.length} personas';
+  }
+
+  /// Previsualización mientras se arrastra (o se pasa el mouse en "Ubicar")
+  /// una actividad especial: dónde queda, qué tareas se reemplazarían (de uno
+  /// o varios operarios) y qué lo impide.
+  void _actualizarPreviewEspecial({
+    required ActividadEspecialPendiente pendiente,
+    required int dayIndex,
+    required double localDy,
+  }) {
+    final impacto = _impactoEspecial(
+      pendiente: pendiente,
+      dayIndex: dayIndex,
+      localDy: localDy,
+    );
+    final visibles = {
+      for (final pl in _taskPlacementsCache)
+        if (pl.dayIndex == dayIndex) pl.tarea.id,
+    };
+    final reemplazos = impacto.reemplazos;
+    final bloqueos = impacto.bloqueos;
+    final etiqueta = etiquetaCorrectiva(minuscula: true);
+
+    String resumen;
+    if (impacto.fueraDeHorario != null) {
+      resumen = impacto.fueraDeHorario!;
+    } else if (bloqueos.isNotEmpty) {
+      final b = bloqueos.first;
+      final quien = b.operariosEnActividad.isEmpty
+          ? ''
+          : ' de ${b.operariosEnActividad.join(', ')}';
+      resumen = b.bloqueo == MotivoBloqueoEspecial.noEsPreventiva
+          ? 'Choca con otra $etiqueta$quien'
+          : 'Choca con una preventiva P${b.tarea.prioridad}$quien, que no se puede reemplazar';
+    } else if (reemplazos.isNotEmpty) {
+      final personas = impacto.operariosAfectados.length;
+      resumen =
+          'Reemplaza ${reemplazos.length} ${reemplazos.length == 1 ? 'tarea' : 'tareas'}'
+          '${personas > 1 ? ' de $personas personas' : ''}';
+    } else {
+      resumen = pendiente.operariosIds.isEmpty
+          ? 'Sin operario asignado'
+          : 'Libre para ${_quienesDe(pendiente)}';
+    }
+
+    _setEspecialPreview(
+      _EspecialDropPreview(
+        dayIndex: dayIndex,
+        startMinute: impacto.inicio,
+        duracionMinutos: pendiente.duracionMinutos,
+        valido: impacto.valido,
+        reemplaza: reemplazos.isNotEmpty,
+        titulo: pendiente.descripcion,
+        color: _kColorPreviewEspecial,
+        choquesIds: [for (final c in reemplazos) c.tarea.id],
+        bloqueadosIds: [for (final c in bloqueos) c.tarea.id],
+        ocultos: impacto.choques
+            .where((c) => !visibles.contains(c.tarea.id))
+            .length,
+        resumen: resumen,
+        nota: widget.esFestivo(_fechaDia(dayIndex))
+            ? 'Festivo: solo si su plaza trabaja festivos'
+            : (impacto.ajustado ? 'Se ajustó al horario de trabajo' : null),
+        enfocar: true,
+      ),
+    );
+  }
+
+  /// Suelta (o ubica con un toque) [pendiente] en el día. La página consulta
+  /// al servidor el impacto real y, si hay reemplazos o algo lo impide,
+  /// muestra la revisión antes de guardar.
+  Future<void> _soltarEspecial({
+    required ActividadEspecialPendiente pendiente,
+    required int dayIndex,
+    required double localDy,
+  }) async {
+    if (widget.onProgramarActividadEspecial == null) return;
+    final impacto = _impactoEspecial(
+      pendiente: pendiente,
+      dayIndex: dayIndex,
+      localDy: localDy,
+    );
+    if (impacto.fueraDeHorario != null) {
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text('No cabe ese día. ${impacto.fueraDeHorario}')),
+      );
+      return;
+    }
+    final dia = _fechaDia(dayIndex);
+    final inicio = DateTime(
+      dia.year,
+      dia.month,
+      dia.day,
+      impacto.inicio ~/ 60,
+      impacto.inicio % 60,
+    );
+    await widget.onProgramarActividadEspecial!(
+      pendiente: pendiente,
+      nuevoInicio: inicio,
+      nuevoFin: inicio.add(Duration(minutes: pendiente.duracionMinutos)),
+    );
+  }
+
+  /// Mientras se arrastra una actividad especial: una zona por día, encima de
+  /// las tarjetas, para que soltarla sobre una o varias tareas funcione igual
+  /// que en un hueco (la hora es la del punto donde se suelta).
+  List<Widget> _buildEspecialDropTargets(double colWidth, double heightGrid) {
     if (widget.onProgramarActividadEspecial == null) return const [];
+    return [
+      for (int dayIndex = 0; dayIndex < _dias; dayIndex++)
+        Positioned(
+          left: anchoHora + dayIndex * colWidth,
+          top: 0,
+          width: colWidth,
+          height: heightGrid,
+          child: Builder(
+            builder: (targetContext) {
+              double localDyDe(Offset globalOffset) {
+                final box = targetContext.findRenderObject() as RenderBox?;
+                return box?.globalToLocal(globalOffset).dy ?? 0;
+              }
 
-    final widgets = <Widget>[];
-    for (int dayIndex = 0; dayIndex < _dias; dayIndex++) {
-      final rangos = _rangosProgramablesDia(dayIndex);
-      for (final rango in rangos) {
-        final top = (rango.start - (_horaInicio * 60)) * pxPorMin;
-        final height = (rango.end - rango.start) * pxPorMin;
-        widgets.add(
-          Positioned(
-            left: anchoHora + dayIndex * colWidth,
-            width: colWidth,
-            top: top,
-            height: height,
-            child: Builder(
-              builder: (targetContext) {
-                double localDyDe(Offset globalOffset) {
-                  final box = targetContext.findRenderObject() as RenderBox?;
-                  final local = box?.globalToLocal(globalOffset);
-                  return (local?.dy ?? 0) + top;
-                }
-
-                return DragTarget<_DraggedWeekEspecial>(
-                  onWillAcceptWithDetails: (_) => true,
-                  onMove: (details) => _actualizarPreviewEnHueco(
-                    duracionMinutos: details.data.pendiente.duracionMinutos,
-                    titulo: details.data.pendiente.descripcion,
-                    color: _kColorPreviewEspecial,
+              return DragTarget<_DraggedWeekEspecial>(
+                onWillAcceptWithDetails: (_) => true,
+                onMove: (details) => _actualizarPreviewEspecial(
+                  pendiente: details.data.pendiente,
+                  dayIndex: dayIndex,
+                  localDy: localDyDe(details.offset),
+                ),
+                onLeave: (_) => _setEspecialPreview(null),
+                onAcceptWithDetails: (details) async {
+                  _setEspecialPreview(null);
+                  await _soltarEspecial(
+                    pendiente: details.data.pendiente,
                     dayIndex: dayIndex,
                     localDy: localDyDe(details.offset),
-                  ),
-                  onLeave: (_) => _setEspecialPreview(null),
-                  onAcceptWithDetails: (details) async {
-                    _setEspecialPreview(null);
-                    await _intentarProgramarEspecialEnHueco(
-                      dragged: details.data,
-                      dayIndex: dayIndex,
-                      localDy: localDyDe(details.offset),
-                    );
-                  },
-                  builder: (context, candidateData, rejectedData) =>
-                      const SizedBox.expand(),
-                );
-              },
-            ),
+                  );
+                },
+                builder: (context, candidateData, rejectedData) =>
+                    const SizedBox.expand(),
+              );
+            },
           ),
-        );
-      }
-    }
-    return widgets;
+        ),
+    ];
   }
 
   /// Rectángulo (left, top, ancho, alto) de una tarea ya ubicada en su carril.
@@ -6572,11 +6749,13 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
 
   /// Capa de previsualización del arrastre. Muestra:
   ///  - el cuadro "fantasma" donde quedaría (morado/naranja/azul según qué se
-  ///    arrastra; rojo si no cabe),
-  ///  - las tareas que quedan afectadas (se resaltan en rojo/ámbar encima de
-  ///    su tarjeta, con una etiqueta de qué pasaría),
-  ///  - si el punto donde se suelta está ocupado, un recuadro rojo punteado
-  ///    en ese punto y el fantasma en el hueco libre al que se ajustará.
+  ///    arrastra; rojo si no se puede) y una etiqueta con la hora y qué pasa,
+  ///  - las tareas afectadas, encima de su tarjeta: en ámbar las que se
+  ///    reemplazarían (de todos los operarios de la actividad) y en rojo las
+  ///    que lo impiden; con una actividad especial, el resto del día se
+  ///    atenúa para que se vea de un vistazo a quién toca,
+  ///  - si el punto donde se suelta está ocupado y se reubica (mover una
+  ///    correctiva o una excluida), un recuadro rojo punteado en ese punto.
   Widget _buildEspecialPreviewLayer({
     required double colWidth,
     required double heightGrid,
@@ -6607,7 +6786,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
             preview.deseadoMinute != preview.startMinute;
 
         // Geometría del fantasma: solo el carril de la preventiva cuando
-        // reemplaza; en un hueco libre, todo el ancho del día.
+        // reemplaza una sola; si no, todo el ancho del día.
         double ghostLeft;
         double ghostWidth;
         if (preview.reemplaza && preview.laneCount > 1) {
@@ -6629,28 +6808,87 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
         }
 
         final lineaTitulo = !preview.valido
-            ? 'No cabe aquí'
+            ? 'No se puede aquí'
             : (titulo.isEmpty ? horas : titulo);
-        final lineaDetalle = !preview.valido
-            ? (titulo.isEmpty
-                  ? 'Suéltala en otra franja libre'
-                  : '$titulo · $horas')
-            : (preview.reemplaza
-                  ? '$horas · reemplaza "${preview.reemplazaTitulo ?? ''}"'
-                  : (ajustado
-                        ? '$horas · se ajusta al hueco libre'
-                        : (titulo.isEmpty ? null : horas)));
+        final String? lineaDetalle;
+        if (preview.resumen != null) {
+          lineaDetalle = '$horas · ${preview.resumen}';
+        } else if (!preview.valido) {
+          lineaDetalle = titulo.isEmpty
+              ? 'Suéltala en otra franja libre'
+              : '$titulo · $horas';
+        } else if (preview.reemplaza) {
+          lineaDetalle =
+              '$horas · reemplaza "${preview.reemplazaTitulo ?? ''}"';
+        } else if (ajustado) {
+          lineaDetalle = '$horas · se ajusta al hueco libre';
+        } else {
+          lineaDetalle = titulo.isEmpty ? null : horas;
+        }
+        final extras = [
+          if (preview.ocultos > 0)
+            preview.ocultos == 1
+                ? '+1 tarea fuera del filtro'
+                : '+${preview.ocultos} tareas fuera del filtro',
+          ?preview.nota,
+        ];
 
         final children = <Widget>[];
+        final reemplazadas = preview.choquesIds.toSet();
+        final bloqueadas = preview.bloqueadosIds.toSet();
+
+        // Con una actividad especial, el resto del día se atenúa.
+        if (preview.enfocar) {
+          for (final pl in _taskPlacementsCache) {
+            if (pl.dayIndex != preview.dayIndex) continue;
+            if (reemplazadas.contains(pl.tarea.id) ||
+                bloqueadas.contains(pl.tarea.id)) {
+              continue;
+            }
+            final r = _rectDeColocacion(pl, colWidth);
+            children.add(
+              Positioned.fromRect(
+                rect: r,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+            );
+          }
+        }
+
+        // Fantasma (solo el recuadro: la etiqueta va encima de todo).
+        final ghostTop = topDe(preview.startMinute);
+        children.add(
+          Positioned(
+            left: ghostLeft,
+            top: ghostTop,
+            width: ghostWidth,
+            height: altoPreview,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: previewColor.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: previewColor, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: previewColor.withValues(alpha: 0.25),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
 
         // Tareas afectadas: resaltadas encima de su tarjeta.
-        final afectadas = preview.choquesIds.toSet();
-        if (afectadas.isNotEmpty) {
-          final colorAfectada = preview.reemplaza
-              ? const Color(0xFFD97706)
-              : Colors.red.shade700;
+        void resaltar(Set<int> ids, Color color, String etiqueta) {
           for (final pl in _taskPlacementsCache) {
-            if (!afectadas.contains(pl.tarea.id)) continue;
+            if (!ids.contains(pl.tarea.id)) continue;
             if (pl.dayIndex != preview.dayIndex) continue;
             final r = _rectDeColocacion(pl, colWidth);
             children.add(
@@ -6663,9 +6901,9 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                   alignment: Alignment.topRight,
                   padding: const EdgeInsets.all(3),
                   decoration: BoxDecoration(
-                    color: colorAfectada.withValues(alpha: 0.18),
+                    color: color.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: colorAfectada, width: 2),
+                    border: Border.all(color: color, width: 2.5),
                   ),
                   child: r.height >= 26 && r.width >= 40
                       ? Container(
@@ -6674,11 +6912,11 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                             vertical: 1,
                           ),
                           decoration: BoxDecoration(
-                            color: colorAfectada,
+                            color: color,
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
-                            preview.reemplaza ? 'Se reemplaza' : 'Ocupado',
+                            etiqueta,
                             maxLines: 1,
                             overflow: TextOverflow.clip,
                             style: const TextStyle(
@@ -6695,129 +6933,158 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
           }
         }
 
+        resaltar(
+          reemplazadas,
+          preview.reemplaza ? const Color(0xFFD97706) : Colors.red.shade700,
+          preview.reemplaza ? 'Se reemplaza' : 'Ocupado',
+        );
+        resaltar(bloqueadas, Colors.red.shade800, 'No se reemplaza');
+
         // Punto donde se soltó, cuando está ocupado y se reubica.
         if (ajustado) {
           final deseado = preview.deseadoMinute ?? preview.startMinute;
-          {
-            children.add(
-              Positioned(
-                left: anchoHora + preview.dayIndex * colWidth + 4,
-                top: topDe(deseado),
-                width: colWidth - 8,
-                height: altoPreview,
-                child: Container(
-                  alignment: Alignment.centerLeft,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: Colors.red.shade400.withValues(alpha: 0.8),
-                      width: 1.5,
-                    ),
+          children.add(
+            Positioned(
+              left: anchoHora + preview.dayIndex * colWidth + 4,
+              top: topDe(deseado),
+              width: colWidth - 8,
+              height: altoPreview,
+              child: Container(
+                alignment: Alignment.centerLeft,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: Colors.red.shade400.withValues(alpha: 0.8),
+                    width: 1.5,
                   ),
-                  child: altoPreview >= 28
-                      ? Text(
-                          'Aquí hay otra tarea (${_formatMinuteOfDay(deseado)})',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Colors.red.shade700,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        )
-                      : null,
                 ),
-              ),
-            );
-          }
-        }
-
-        // Fantasma.
-        children.add(
-          Positioned(
-            left: ghostLeft,
-            top: topDe(preview.startMinute),
-            width: ghostWidth,
-            height: altoPreview,
-            child: Container(
-              clipBehavior: Clip.hardEdge,
-              padding: EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: altoPreview < 34 ? 2 : 5,
-              ),
-              decoration: BoxDecoration(
-                color: previewColor.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: previewColor, width: 2),
-                boxShadow: [
-                  BoxShadow(
-                    color: previewColor.withValues(alpha: 0.3),
-                    blurRadius: 10,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: ClipRect(
-                child: OverflowBox(
-                  alignment: Alignment.centerLeft,
-                  minHeight: 0,
-                  maxHeight: double.infinity,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            preview.valido
-                                ? (preview.reemplaza
-                                      ? Icons.swap_horiz_rounded
-                                      : Icons.place_outlined)
-                                : Icons.block_rounded,
-                            size: 13,
-                            color: previewColor,
-                          ),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              lineaTitulo,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: previewColor,
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (altoPreview >= 40 && lineaDetalle != null)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 17, top: 1),
-                          child: Text(
-                            lineaDetalle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: previewColor.withValues(alpha: 0.9),
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                child: altoPreview >= 28
+                    ? Text(
+                        'Aquí hay otra tarea (${_formatMinuteOfDay(deseado)})',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.red.shade700,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
                         ),
-                    ],
-                  ),
-                ),
+                      )
+                    : null,
               ),
             ),
+          );
+        }
+
+        // Etiqueta: arriba del fantasma (o debajo si no hay espacio), con un
+        // ancho mínimo legible aunque la columna sea angosta.
+        final anchoTotal = anchoHora + colWidth * _dias;
+        final labelWidth = math.min(
+          math.max(ghostWidth, 220.0),
+          anchoTotal - 8,
+        );
+        final labelLeft = math.max(
+          4.0,
+          math.min(ghostLeft, anchoTotal - labelWidth - 4),
+        );
+        final arriba = ghostTop >= 64;
+        final etiqueta = Material(
+          color: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(8, 5, 8, 6),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: previewColor, width: 1.5),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x33000000),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      !preview.valido
+                          ? Icons.block_rounded
+                          : (preview.reemplaza
+                                ? Icons.swap_horiz_rounded
+                                : Icons.place_outlined),
+                      size: 14,
+                      color: previewColor,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        lineaTitulo,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: previewColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (lineaDetalle != null)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 18, top: 1),
+                    child: Text(
+                      lineaDetalle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF1F2937),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                if (extras.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 18, top: 1),
+                    child: Text(
+                      extras.join(' · '),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF6B7280),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+        children.add(
+          Positioned(
+            left: labelLeft,
+            top: arriba ? ghostTop - 4 : ghostTop + altoPreview + 4,
+            width: labelWidth,
+            child: arriba
+                ? FractionalTranslation(
+                    translation: const Offset(0, -1),
+                    child: etiqueta,
+                  )
+                : etiqueta,
           ),
         );
 
         return Positioned.fill(
-          child: IgnorePointer(child: Stack(children: children)),
+          child: IgnorePointer(
+            child: Stack(clipBehavior: Clip.none, children: children),
+          ),
         );
       },
     );
@@ -7193,36 +7460,6 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                               }),
                               ValueListenableBuilder<bool>(
                                 valueListenable:
-                                    _weekCorrectivaDragActiveNotifier,
-                                builder: (context, dragActivo, _) {
-                                  return ValueListenableBuilder<bool>(
-                                    valueListenable:
-                                        _weekExcluidaDragActiveNotifier,
-                                    builder: (context, dragExcluidaActiva, _) {
-                                      return ValueListenableBuilder<bool>(
-                                        valueListenable:
-                                            _weekEspecialDragActiveNotifier,
-                                        builder:
-                                            (context, dragEspecialActiva, _) {
-                                              if (dragActivo ||
-                                                  dragExcluidaActiva ||
-                                                  dragEspecialActiva) {
-                                                return const SizedBox.shrink();
-                                              }
-                                              return Stack(
-                                                children: _buildTapTargets(
-                                                  context,
-                                                  colWidth,
-                                                ),
-                                              );
-                                            },
-                                      );
-                                    },
-                                  );
-                                },
-                              ),
-                              ValueListenableBuilder<bool>(
-                                valueListenable:
                                     _weekExcluidaDragActiveNotifier,
                                 builder: (context, dragActivo, _) {
                                   if (!dragActivo) {
@@ -7230,20 +7467,6 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                   }
                                   return Stack(
                                     children: _buildExcluidaDropTargets(
-                                      colWidth,
-                                    ),
-                                  );
-                                },
-                              ),
-                              ValueListenableBuilder<bool>(
-                                valueListenable:
-                                    _weekEspecialDragActiveNotifier,
-                                builder: (context, dragActivo, _) {
-                                  if (!dragActivo) {
-                                    return const SizedBox.shrink();
-                                  }
-                                  return Stack(
-                                    children: _buildEspecialDropTargets(
                                       colWidth,
                                     ),
                                   );
@@ -7326,17 +7549,6 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
 
                                 final card = GestureDetector(
                                   onTap: () {
-                                    final pendiente =
-                                        widget.pendienteEnUbicacion;
-                                    if (pendiente != null) {
-                                      _intentarProgramarEspecialSobreTarea(
-                                        dragged: _DraggedWeekEspecial(
-                                          pendiente: pendiente,
-                                        ),
-                                        tareaObjetivo: t,
-                                      );
-                                      return;
-                                    }
                                     widget.onTapTarea(t);
                                   },
                                   child: Container(
@@ -7615,7 +7827,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                 final draggableCard =
                                     esCorrectiva &&
                                         widget.onMoveCorrectiva != null
-                                    ? LongPressDraggable<_DraggedWeekTask>(
+                                    ? ArrastreAdaptable<_DraggedWeekTask>(
                                         data: _DraggedWeekTask(
                                           tarea: t,
                                           duracionMinutos: durMin <= 0
@@ -7774,128 +7986,32 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                   top: top,
                                   width: fullWidth,
                                   height: height,
-                                  child: DragTarget<_DraggedWeekEspecial>(
-                                    onWillAcceptWithDetails: (details) {
-                                      return widget
-                                                  .onProgramarActividadEspecial !=
-                                              null &&
-                                          (t.tipo ?? '').trim().toUpperCase() ==
-                                              'PREVENTIVA' &&
-                                          _puedeReemplazarPreventiva(
-                                            prioridadCorrectiva: details
-                                                .data
-                                                .pendiente
-                                                .prioridad,
-                                            prioridadPreventiva: t.prioridad,
-                                          );
-                                    },
-                                    onMove: (details) =>
-                                        _actualizarPreviewReemplazo(
-                                          objetivo: t,
-                                          dayIndex: placement.dayIndex,
-                                          duracionMinutos: details
-                                              .data
-                                              .pendiente
-                                              .duracionMinutos,
-                                          titulo: details
-                                              .data
-                                              .pendiente
-                                              .descripcion,
-                                          color: _kColorPreviewEspecial,
-                                        ),
-                                    onLeave: (_) => _setEspecialPreview(null),
-                                    onAcceptWithDetails: (details) async {
-                                      _setEspecialPreview(null);
-                                      await _intentarProgramarEspecialSobreTarea(
-                                        dragged: details.data,
-                                        tareaObjetivo: t,
-                                      );
-                                    },
-                                    builder: (context, candidateData, rejectedData) {
-                                      final dragged = candidateData.isNotEmpty
-                                          ? candidateData.first
-                                          : rejectedData.isNotEmpty
-                                          ? rejectedData.first
-                                          : null;
-                                      var dropState = _EspecialDropState.none;
-                                      if (candidateData.isNotEmpty) {
-                                        if (dragged == null) {
-                                          dropState =
-                                              _EspecialDropState.blocked;
-                                        } else {
-                                          final allow =
-                                              _puedeReemplazarPreventiva(
-                                                prioridadCorrectiva:
-                                                    dragged.pendiente.prioridad,
-                                                prioridadPreventiva:
-                                                    t.prioridad,
-                                              );
-                                          dropState = allow
-                                              ? _EspecialDropState.allowed
-                                              : _EspecialDropState.blocked;
-                                        }
-                                      } else if (rejectedData.isNotEmpty) {
-                                        dropState = _EspecialDropState.blocked;
-                                      }
-                                      if (dropState ==
-                                          _EspecialDropState.none) {
-                                        return excluidaDropTarget;
-                                      }
-                                      final borderColor =
-                                          dropState ==
-                                              _EspecialDropState.allowed
-                                          ? const Color(0xFF6D28D9)
-                                          : Colors.red.shade700;
-                                      final overlayColor =
-                                          dropState ==
-                                              _EspecialDropState.allowed
-                                          ? const Color(
-                                              0xFF7C3AED,
-                                            ).withValues(alpha: 0.16)
-                                          : Colors.red.withValues(alpha: 0.14);
-                                      return Container(
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                          border: Border.all(
-                                            color: borderColor,
-                                            width: 2,
-                                          ),
-                                          color: overlayColor,
-                                        ),
-                                        padding: const EdgeInsets.all(4),
-                                        child: Tooltip(
-                                          message: dragged == null
-                                              ? 'No se puede reemplazar esta tarea.'
-                                              : dropState ==
-                                                    _EspecialDropState.allowed
-                                              ? 'La preventiva "${t.descripcion}" será reemplazada por "${dragged.pendiente.descripcion}".'
-                                              : 'La preventiva "${t.descripcion}" no puede ser reemplazada por "${dragged.pendiente.descripcion}".',
-                                          child: Center(
-                                            child: FittedBox(
-                                              fit: BoxFit.scaleDown,
-                                              child: Text(
-                                                dragged == null
-                                                    ? 'No se puede reemplazar'
-                                                    : '${t.descripcion} → ${dragged.pendiente.descripcion}',
-                                                maxLines: 1,
-                                                style: const TextStyle(
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.w800,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
+                                  child: excluidaDropTarget,
                                 );
                               }),
                               _buildEspecialPreviewLayer(
                                 colWidth: colWidth,
                                 heightGrid: heightGrid,
+                              ),
+                              ..._buildTapTargets(
+                                context,
+                                colWidth,
+                                heightGrid,
+                              ),
+                              ValueListenableBuilder<bool>(
+                                valueListenable:
+                                    _weekEspecialDragActiveNotifier,
+                                builder: (context, dragActivo, _) {
+                                  if (!dragActivo) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return Stack(
+                                    children: _buildEspecialDropTargets(
+                                      colWidth,
+                                      heightGrid,
+                                    ),
+                                  );
+                                },
                               ),
                               ValueListenableBuilder<bool>(
                                 valueListenable:
@@ -7941,6 +8057,11 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                   localDy: local?.dy ?? 0,
                                                   excluirTareaId:
                                                       details.data.tarea.id,
+                                                  operariosIds: details
+                                                      .data
+                                                      .tarea
+                                                      .operariosIds
+                                                      .toSet(),
                                                   permiteFestivo: details
                                                       .data
                                                       .tarea
@@ -8235,7 +8356,7 @@ class _SidebarAgendaDia extends StatelessWidget {
         ),
       );
 
-      return LongPressDraggable<_DraggedWeekExcluida>(
+      return ArrastreAdaptable<_DraggedWeekExcluida>(
         data: _DraggedWeekExcluida(excluida: item),
         maxSimultaneousDrags: 1,
         dragAnchorStrategy: pointerDragAnchorStrategy,

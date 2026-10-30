@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_application_1/api/evidencias_multipart.dart';
 import 'package:flutter_application_1/model/evidencia_adjunto_model.dart';
+import 'package:flutter_application_1/model/impacto_correctiva_model.dart';
 import 'package:flutter_application_1/model/tarea_model.dart';
 import 'package:flutter_application_1/utils/pickers/selected_upload_file.dart';
 import 'package:http/http.dart' as http;
@@ -57,6 +58,25 @@ class TareaRequest {
     this.herramientas = const [],
     this.herramientaItemIds = const [],
   });
+
+  TareaRequest copyWith({DateTime? fechaInicio, DateTime? fechaFin}) =>
+      TareaRequest(
+        descripcion: descripcion,
+        fechaInicio: fechaInicio ?? this.fechaInicio,
+        fechaFin: fechaFin ?? this.fechaFin,
+        duracionMinutos: duracionMinutos,
+        prioridad: prioridad,
+        tipo: tipo,
+        ubicacionId: ubicacionId,
+        elementoId: elementoId,
+        conjuntoId: conjuntoId,
+        supervisorId: supervisorId,
+        operariosIds: operariosIds,
+        observaciones: observaciones,
+        maquinariaIds: maquinariaIds,
+        herramientas: herramientas,
+        herramientaItemIds: herramientaItemIds,
+      );
 
   Map<String, dynamic> toJson() => {
     'descripcion': descripcion,
@@ -143,16 +163,23 @@ class TareaApi {
     }
   }
 
+  /// [reemplazarIds]: preventivas que la correctiva reemplaza al editarse
+  /// (quedan NO_COMPLETADA en la misma operación).
   Future<Map<String, dynamic>> editarTareaConRespuesta(
     int id,
     TareaRequest req, {
     bool liberarRecursosOcupados = false,
+    List<int> reemplazarIds = const [],
+    String? motivoReemplazo,
   }) async {
     final resp = await _client.patch(
       '${AppConstants.gerenteBase}/tareas/$id',
       body: {
         ...req.toJson(),
         if (liberarRecursosOcupados) 'liberarRecursosOcupados': true,
+        if (reemplazarIds.isNotEmpty) 'reemplazarIds': reemplazarIds,
+        if (motivoReemplazo != null && motivoReemplazo.trim().isNotEmpty)
+          'motivoReemplazo': motivoReemplazo.trim(),
       },
     );
 
@@ -227,6 +254,32 @@ class TareaApi {
 
     throw Exception(
       'Error al crear con reemplazo: ${resp.statusCode} - ${resp.body}',
+    );
+  }
+
+  /// Qué pasaría al programar la correctiva [tarea] en su horario: tareas a
+  /// reemplazar (de todos sus operarios), las que lo impiden, huecos que
+  /// quedan, reglas que lo bloquean y un horario libre sugerido. No escribe.
+  ///
+  /// [tareaId]: al editar una correctiva ya programada (no se cuenta a sí
+  /// misma como choque ni en el límite semanal).
+  Future<ImpactoCorrectiva> previsualizarImpactoCorrectiva(
+    TareaRequest tarea, {
+    int? tareaId,
+  }) async {
+    final resp = await _client.post(
+      '${AppConstants.gerenteBase}/tareas/reemplazo/impacto',
+      body: {'tarea': tarea.toJson(), 'tareaId': ?tareaId},
+    );
+    if (resp.statusCode != 200) {
+      throw ApiException.fromResponse(
+        statusCode: resp.statusCode,
+        body: resp.body,
+        fallback: 'No se pudo revisar el horario de la actividad.',
+      );
+    }
+    return ImpactoCorrectiva.fromJson(
+      Map<String, dynamic>.from(jsonDecode(resp.body) as Map),
     );
   }
 
