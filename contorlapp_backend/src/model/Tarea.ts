@@ -159,6 +159,17 @@ export const EditarTareaDTO = z.object({
   // libre, por defecto se rechaza (409 RECURSO_OCUPADO). Con true, el usuario
   // decide liberar esas reservas (quedan canceladas en el histórico).
   liberarRecursosOcupados: z.boolean().optional(),
+
+  // Correctivas: preventivas que se reemplazan al alargarla, moverla o sumar
+  // operarios (las ids salen de POST /gerente/tareas/reemplazo/impacto con
+  // `tareaId`). Quedan NO_COMPLETADA en la misma transacción.
+  reemplazarIds: z.array(z.number().int().positive()).optional(),
+  motivoReemplazo: z
+    .string()
+    .trim()
+    .min(3, "El motivo del reemplazo debe tener al menos 3 caracteres.")
+    .max(500)
+    .optional(),
 });
 
 /** Booleano de query string ("true"/"false"/"1"/"0"); también acepta un booleano real. */

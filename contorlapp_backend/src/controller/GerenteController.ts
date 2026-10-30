@@ -628,6 +628,21 @@ export class GerenteController {
     }
   };
 
+  // Qué pasaría al programar una correctiva en un horario (no escribe nada).
+  previsualizarImpactoCorrectiva: RequestHandler = async (req, res, next) => {
+    try {
+      const body = req.body ?? {};
+      const service = await serviceParaTareas(req);
+      const out = await service.previsualizarImpactoCorrectiva({
+        ...body,
+        tarea: conSupervisorPorDefecto(actorDeTareas(req), body.tarea),
+      });
+      res.status(out?.ok === false ? 400 : 200).json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
   editarTarea: RequestHandler = async (req, res, next) => {
     try {
       const { tareaId } = TareaIdParam.parse(req.params);

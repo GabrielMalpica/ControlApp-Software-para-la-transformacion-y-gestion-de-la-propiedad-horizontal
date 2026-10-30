@@ -165,7 +165,11 @@ export class EmpresaController {
     try {
       const empresaId = resolveEmpresaId(req);
       const service = new EmpresaService(empresaId);
-      const items = await service.listarMaquinariaDisponible();
+      const conjuntoId =
+        typeof req.query.conjuntoId === "string" && req.query.conjuntoId.trim()
+          ? req.query.conjuntoId.trim()
+          : undefined;
+      const items = await service.listarMaquinariaDisponible(conjuntoId);
       res.json(items);
     } catch (err) {
       next(err);

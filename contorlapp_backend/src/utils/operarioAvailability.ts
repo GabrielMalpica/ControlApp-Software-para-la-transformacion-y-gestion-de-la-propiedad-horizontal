@@ -235,9 +235,10 @@ async function minutosAsignadosSemana(params: {
   conjuntoId: string;
   operarioId: string;
   fechaReferencia: Date;
-  excluirTareaId?: number;
+  excluirTareaIds?: number[];
 }) {
-  const { prisma, conjuntoId, operarioId, fechaReferencia, excluirTareaId } = params;
+  const { prisma, conjuntoId, operarioId, fechaReferencia } = params;
+  const excluirTareaIds = params.excluirTareaIds ?? [];
   const ini = inicioSemana(fechaReferencia);
   const fin = new Date(ini);
   fin.setDate(ini.getDate() + 6);
@@ -249,8 +250,14 @@ async function minutosAsignadosSemana(params: {
       operarios: { some: { id: operarioId } },
       fechaInicio: { lte: fin },
       fechaFin: { gte: ini },
-      ...(excluirTareaId != null ? { id: { not: excluirTareaId } } : {}),
+      ...(excluirTareaIds.length ? { id: { notIn: excluirTareaIds } } : {}),
       estado: { notIn: [EstadoTarea.RECHAZADA] },
+      // Una tarea cancelada por un reemplazo no se trabajó: sus horas las
+      // ocupa la correctiva que la reemplazó (si no, se contaban dos veces).
+      NOT: {
+        estado: EstadoTarea.NO_COMPLETADA,
+        reprogramadaPorTareaId: { not: null },
+      },
     },
     select: { duracionMinutos: true },
   });
@@ -258,6 +265,10 @@ async function minutosAsignadosSemana(params: {
   return tareas.reduce((sum, t) => sum + (t.duracionMinutos ?? 0), 0);
 }
 
+/**
+ * [excluirTareaId(s)]: tareas que no cuentan, p. ej. la que se edita o las
+ * preventivas que una correctiva va a reemplazar (sus horas se liberan).
+ */
 export async function validarLimiteSemanalOperarios(params: {
   prisma: DbClient;
   conjuntoId: string;
@@ -265,17 +276,26 @@ export async function validarLimiteSemanalOperarios(params: {
   fechaInicio: Date;
   duracionMinutos: number;
   excluirTareaId?: number;
+  excluirTareaIds?: number[];
 }) {
-  const { prisma, conjuntoId, operariosIds, fechaInicio, duracionMinutos, excluirTareaId } = params;
+  const { prisma, conjuntoId, operariosIds, fechaInicio, duracionMinutos } = params;
+  const excluirTareaIds = [
+    ...(params.excluirTareaIds ?? []),
+    ...(params.excluirTareaId != null ? [params.excluirTareaId] : []),
+  ];
   const excedidos: string[] = [];
+  const detalle: Array<{ operarioId: string; capacidadMinutos: number; usadosMinutos: number }> = [];
   for (const operarioId of Array.from(new Set(operariosIds.map(String)))) {
     const [capacidad, usados] = await Promise.all([
       capacidadSemanalOperario({ prisma, conjuntoId, operarioId, fechaReferencia: fechaInicio }),
-      minutosAsignadosSemana({ prisma, conjuntoId, operarioId, fechaReferencia: fechaInicio, excluirTareaId }),
+      minutosAsignadosSemana({ prisma, conjuntoId, operarioId, fechaReferencia: fechaInicio, excluirTareaIds }),
     ]);
-    if (usados + duracionMinutos > capacidad) excedidos.push(operarioId);
+    if (usados + duracionMinutos > capacidad) {
+      excedidos.push(operarioId);
+      detalle.push({ operarioId, capacidadMinutos: capacidad, usadosMinutos: usados });
+    }
   }
-  return { ok: excedidos.length === 0, excedidos };
+  return { ok: excedidos.length === 0, excedidos, detalle };
 }
 
 export function allowedIntervalsForUserWithAvailability(params: {
@@ -876,6 +896,25 @@ export async function validarIntervaloProgramacion(params: {
     fecha: fechaInicio,
     operariosIds: params.operariosIds,
   });
+  return evaluarIntervaloEnDisponibilidad({ disponibilidad, fechaInicio, fechaFin });
+}
+
+/**
+ * La misma revisión de [validarIntervaloProgramacion] sobre una
+ * disponibilidad ya consultada (para no repetir las consultas cuando además
+ * se necesitan las ventanas, p. ej. para sugerir otro horario).
+ */
+export function evaluarIntervaloEnDisponibilidad(params: {
+  disponibilidad: Pick<
+    Awaited<ReturnType<typeof obtenerIntervalosEfectivosProgramacion>>,
+    "operariosEnDescanso" | "intervalosConjunto" | "intervalosEfectivos"
+  >;
+  fechaInicio: Date;
+  fechaFin: Date;
+}):
+  | { ok: true; intervalo: IntervaloLaboral }
+  | { ok: false; motivo: MotivoIntervaloInvalido; mensaje: string } {
+  const { disponibilidad, fechaInicio, fechaFin } = params;
   if (disponibilidad.operariosEnDescanso.length > 0) {
     return {
       ok: false,

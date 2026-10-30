@@ -484,14 +484,36 @@ export class EmpresaService {
     });
   }
 
-  async listarMaquinariaDisponible() {
+  /**
+   * Máquinas que se pueden elegir para una tarea: las de la empresa libres
+   * para prestar y, con [conjuntoId], también las propias de ese conjunto
+   * (antes no salían y una correctiva no podía usar la guadaña del propio
+   * conjunto). Que estén libres a la hora de la tarea lo valida la reserva.
+   */
+  async listarMaquinariaDisponible(conjuntoId?: string) {
+    const utilizable = {
+      empresaId: this.empresaNit,
+      estado: "OPERATIVA" as const,
+      estadoAprobacion: "APROBADA" as const,
+    };
     return prisma.maquinaria.findMany({
       where: {
-        propietarioTipo: "EMPRESA",
-        empresaId: this.empresaNit,
-        estado: "OPERATIVA",
-        estadoAprobacion: "APROBADA",
-        asignaciones: { none: { estado: { in: ["RESERVADA", "ACTIVA"] } } },
+        OR: [
+          {
+            ...utilizable,
+            propietarioTipo: "EMPRESA",
+            asignaciones: { none: { estado: { in: ["RESERVADA", "ACTIVA"] } } },
+          },
+          ...(conjuntoId
+            ? [
+                {
+                  ...utilizable,
+                  propietarioTipo: "CONJUNTO" as const,
+                  conjuntoPropietarioId: conjuntoId,
+                },
+              ]
+            : []),
+        ],
       },
       select: maquinariaCatalogoSelect,
       orderBy: { nombre: "asc" },

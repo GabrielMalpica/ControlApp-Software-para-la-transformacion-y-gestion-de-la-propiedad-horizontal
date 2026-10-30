@@ -246,6 +246,11 @@ router.post(
   requirePermission("tareas.crear", "cronograma.correctivas_programar"),
   ctrl.asignarTareaConReemplazo,
 );
+router.post(
+  "/tareas/reemplazo/impacto",
+  requirePermission("tareas.crear", "cronograma.correctivas_programar"),
+  ctrl.previsualizarImpactoCorrectiva,
+);
 router.patch(
   "/tareas/:tareaId",
   requirePermission("tareas.crear", "cronograma.correctivas_programar"),
