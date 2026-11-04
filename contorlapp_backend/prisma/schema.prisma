@@ -655,6 +655,8 @@ model SesionRefresh {
   revocadoEn       DateTime?
   motivoRevocacion String?
   userAgent        String?
+  /// "web" (cookie HttpOnly) o "app" (app Android, token en el cuerpo).
+  canal            String    @default("web")
 
   @@index([familiaId])
   @@index([usuarioId])
@@ -928,6 +930,17 @@ model RegistroAsistencia {
   registradoPorId  String?
   actualizadoPorId String?
 
+  /// Escaneo hecho sin señal en la app Android y enviado después: la hora es
+  /// la del escaneo y `...RecibidaEn` es cuándo llegó al servidor.
+  entradaSinConexion Boolean   @default(false)
+  salidaSinConexion  Boolean   @default(false)
+  entradaRecibidaEn  DateTime?
+  salidaRecibidaEn   DateTime?
+  /// La hora se corrigió porque el reloj del celular estaba mal.
+  relojAjustado      Boolean   @default(false)
+
+  idempotencias AsistenciaIdempotencia[]
+
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -962,11 +975,34 @@ model VisitaSupervisor {
   distanciaEntradaMetros Int?
   distanciaSalidaMetros  Int?
 
+  /// Escaneo hecho sin señal en la app Android y enviado después.
+  entradaSinConexion Boolean @default(false)
+  salidaSinConexion  Boolean @default(false)
+
+  idempotencias AsistenciaIdempotencia[]
+
   creadoEn DateTime @default(now())
 
   @@index([supervisorId, fecha])
   @@index([conjuntoId, fecha])
   @@map("VisitaSupervisor")
+}
+
+/// Reintentos de escaneos de asistencia enviados desde la cola sin señal de la
+/// app: el mismo clienteRegistroId nunca registra dos veces.
+model AsistenciaIdempotencia {
+  clienteRegistroId String   @id
+  usuarioId         String
+  /// "ENTRADA" o "SALIDA"
+  tipo              String
+  registroId        Int?
+  registro          RegistroAsistencia? @relation(fields: [registroId], references: [id], onDelete: Cascade)
+  visitaId          Int?
+  visita            VisitaSupervisor?   @relation(fields: [visitaId], references: [id], onDelete: Cascade)
+  creadoEn          DateTime @default(now())
+
+  @@index([usuarioId])
+  @@map("AsistenciaIdempotencia")
 }
 
 model TurnoExtra {
@@ -2201,6 +2237,15 @@ model CierreTareaIdempotencia {
   tareaId          Int
   estadoResultante EstadoTarea
   creadoEn         DateTime    @default(now())
+  /// Operario que cerró (para que la app consulte solo sus cierres).
+  operarioId       String?
+  /// El cierre llegó de la cola sin señal de la app Android.
+  sinConexion      Boolean     @default(false)
+  recibidoEn       DateTime    @default(now())
+  /// Servidor menos reloj del celular al enviar, en segundos (+ = celular atrasado).
+  desfaseRelojSeg  Int?
+  /// La hora del cierre se corrigió porque el reloj del celular estaba mal.
+  horaAjustada     Boolean     @default(false)
 
   @@index([tareaId])
   @@map("CierreTareaIdempotencia")

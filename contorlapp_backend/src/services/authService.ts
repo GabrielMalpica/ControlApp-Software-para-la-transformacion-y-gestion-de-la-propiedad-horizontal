@@ -14,6 +14,7 @@ import {
   crearSesionRefresh,
   invalidarEstadoSesion,
   rotarSesionRefresh,
+  type CanalSesion,
   type SesionRefreshEmitida,
 } from "./SesionService";
 
@@ -34,6 +35,11 @@ function makeHttpError(status: number, message: string, code?: string): HttpErro
 export type OpcionesSesion = {
   /** Web: token corto en memoria + cookie HttpOnly de renovacion. */
   sesionWeb?: boolean;
+  /**
+   * App Android: token de 8 h + token de renovacion largo en el cuerpo, que la
+   * app guarda en almacenamiento seguro para seguir sincronizando dias despues.
+   */
+  sesionApp?: boolean;
   userAgent?: string | null;
 };
 
@@ -41,9 +47,19 @@ export type SesionEmitida = {
   token: string;
   tokenExpiraEn: Date;
   user: Awaited<ReturnType<AuthService["obtenerSesionUsuario"]>>;
-  /** Solo sesion web: el controller lo pone en la cookie y nunca en el cuerpo. */
+  /**
+   * Token de renovacion. En web el controller lo pone solo en la cookie; en la
+   * app va en el cuerpo de la respuesta.
+   */
   refresh?: SesionRefreshEmitida;
+  canal?: CanalSesion;
 };
+
+function canalSolicitado(opciones: OpcionesSesion): CanalSesion | null {
+  if (opciones.sesionWeb) return "web";
+  if (opciones.sesionApp) return "app";
+  return null;
+}
 
 export const MENSAJE_RECUPERACION_DESACTIVADA =
   "Por seguridad, la contraseña ya no se recupera con correo y cédula. Pide a tu gerente o jefe de operaciones que la restablezca desde ControlApp; al entrar te pedirá crear una nueva.";
@@ -174,31 +190,53 @@ export class AuthService {
 
   /**
    * Emite una sesion para un usuario ya autenticado: JWT (8 h en la app, corto
-   * en web) y, en web, un token de renovacion para la cookie HttpOnly.
+   * en web) y, si se pidio, un token de renovacion (cookie en web, cuerpo en la
+   * app Android).
    */
   async emitirSesion(usuarioId: string, opciones: OpcionesSesion = {}): Promise<SesionEmitida> {
     const usuario = await this.usuarioParaSesion(usuarioId);
     const user = await this.buildSessionUser(usuario);
-    const refresh = opciones.sesionWeb
+    const canal = canalSolicitado(opciones);
+    const refresh = canal
       ? await crearSesionRefresh(this.prisma, {
           usuarioId: usuario.id,
           versionSesion: usuario.versionSesion,
           userAgent: opciones.userAgent,
+          canal,
         })
       : undefined;
 
-    return { ...this.firmarSesion(usuario, user.empresaId, opciones.sesionWeb === true), user, refresh };
+    return {
+      ...this.firmarSesion(usuario, user.empresaId, canal === "web"),
+      user,
+      refresh,
+      ...(canal ? { canal } : {}),
+    };
   }
 
   /** Renueva la sesion web con el token de la cookie (que tambien rota). */
   async refrescarSesionWeb(tokenRefresh: string, userAgent?: string | null): Promise<SesionEmitida> {
-    const rotado = await rotarSesionRefresh(this.prisma, tokenRefresh, userAgent);
+    return this.refrescarSesion(tokenRefresh, "web", userAgent);
+  }
+
+  /** Renueva la sesion de la app Android con su token de renovacion (rota). */
+  async refrescarSesionApp(tokenRefresh: string, userAgent?: string | null): Promise<SesionEmitida> {
+    return this.refrescarSesion(tokenRefresh, "app", userAgent);
+  }
+
+  private async refrescarSesion(
+    tokenRefresh: string,
+    canal: CanalSesion,
+    userAgent?: string | null,
+  ): Promise<SesionEmitida> {
+    const rotado = await rotarSesionRefresh(this.prisma, tokenRefresh, userAgent, canal);
     const usuario = await this.usuarioParaSesion(rotado.usuarioId);
     const user = await this.buildSessionUser(usuario);
     return {
-      ...this.firmarSesion(usuario, user.empresaId, true),
+      ...this.firmarSesion(usuario, user.empresaId, canal === "web"),
       user,
       refresh: { token: rotado.token, expiraEn: rotado.expiraEn },
+      canal,
     };
   }
 

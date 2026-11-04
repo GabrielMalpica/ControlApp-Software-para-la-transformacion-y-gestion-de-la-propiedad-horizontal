@@ -38,16 +38,48 @@ export function getRedis(): Redis | null {
 
   redis = new Redis(url, {
     lazyConnect: true,
+    // Mientras no hay conexion los comandos fallan de inmediato y se usa el
+    // fallback local: una peticion nunca espera a Redis.
     enableOfflineQueue: false,
     maxRetriesPerRequest: 1,
     connectTimeout: 2_000,
-    retryStrategy: () => null,
+    // La red privada de Railway resuelve por IPv6; family 0 acepta IPv4 e IPv6.
+    family: 0,
+    // Antes no se reintentaba nunca: tras un corte (reinicio o mantenimiento
+    // de Redis) la API quedaba en memoria local hasta reiniciarse.
+    retryStrategy: (intentos) => Math.min(intentos * 500, 10_000),
   });
   redis.on("error", () => warnOnce("Redis no disponible; la API continua sin cache distribuida."));
+  redis.on("ready", () => {
+    if (!avisoConectado) console.log("[redis] Caché: Redis conectado.");
+    else console.log("[redis] Redis reconectado.");
+    avisoConectado = true;
+    warned = false;
+  });
   void redis.connect().catch(() => {
     warnOnce("No fue posible conectar con Redis; se aplicara degradacion local.");
   });
   return redis;
+}
+
+let avisoConectado = false;
+
+export type EstadoRedis = "sin-configurar" | "conectado" | "desconectado";
+
+/** Para /readyz y el log de arranque: sin detalles de conexion. */
+export async function estadoRedis(timeoutMs = 1_000): Promise<EstadoRedis> {
+  const client = getRedis();
+  if (!client) return "sin-configurar";
+  if (client.status !== "ready") return "desconectado";
+  try {
+    const respuesta = await Promise.race([
+      client.ping(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), timeoutMs)),
+    ]);
+    return respuesta === "PONG" ? "conectado" : "desconectado";
+  } catch {
+    return "desconectado";
+  }
 }
 
 export async function cacheGet<T>(key: string): Promise<T | null> {

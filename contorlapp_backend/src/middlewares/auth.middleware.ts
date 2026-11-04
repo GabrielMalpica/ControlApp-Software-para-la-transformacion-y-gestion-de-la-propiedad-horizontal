@@ -7,7 +7,12 @@ import { verificarTokenSesion, type AuthPayload } from "../utils/jwtSesion";
 export type { AuthPayload } from "../utils/jwtSesion";
 
 function isPublicRequest(method: string, path: string): boolean {
-  if (method === "GET" && (path === "/" || path === "/ping")) return true;
+  if (
+    method === "GET" &&
+    (path === "/" || path === "/ping" || path === "/healthz" || path === "/readyz")
+  ) {
+    return true;
+  }
   if (
     method === "POST" &&
     (path === "/auth/login" || path === "/auth/recuperar-contrasena")
@@ -15,10 +20,14 @@ function isPublicRequest(method: string, path: string): boolean {
     return true;
   }
 
-  // Renovacion de la sesion web: se autentica con la cookie HttpOnly, no con
-  // Bearer (el token en memoria ya pudo vencer). El logout tambien llega con
-  // token vencido y debe poder cerrar la cookie; cada uno valida por su cuenta.
-  if (method === "POST" && (path === "/auth/refresh" || path === "/auth/logout")) {
+  // Renovacion de la sesion: la web se autentica con la cookie HttpOnly y la
+  // app Android con su token de renovacion en el cuerpo, no con Bearer (el
+  // token de acceso ya pudo vencer). El logout tambien llega con token vencido
+  // y debe poder cerrar la sesion; cada uno valida por su cuenta.
+  if (
+    method === "POST" &&
+    (path === "/auth/refresh" || path === "/auth/refresh-app" || path === "/auth/logout")
+  ) {
     return true;
   }
 

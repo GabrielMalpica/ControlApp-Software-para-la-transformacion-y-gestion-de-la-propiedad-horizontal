@@ -13,6 +13,7 @@ import sharp from "sharp";
 import { z } from "zod";
 import { direccionGpsSinDemora, type DireccionGps } from "./direccion_gps";
 import { ROBOTO_BOLD_TTF_BASE64 } from "./fuente_roboto_bold";
+import { parsearFecha, resolverHora } from "./horaSinConexion";
 import { distanciaMetros } from "./ubicacionMaps";
 
 type TrazoGlifo = {
@@ -70,11 +71,16 @@ const DIFERENCIA_PARA_MOSTRAR_SUBIDA_MS = 10 * 60 * 1000;
 /** Lo máximo que el cierre espera por la dirección. Normalmente ya está en
  * caché porque la app la pidió apenas se tomó la foto. */
 const ESPERA_MAXIMA_DIRECCION_MS = 700;
+/** Cierres que llegan de la cola sin señal: nadie está esperando en pantalla,
+ * así que vale la pena esperar más para que la foto quede con su dirección. */
+const ESPERA_MAXIMA_DIRECCION_SIN_SENAL_MS = 3_000;
 
 export type CapturaEvidencia = {
   tomadaEn: Date | null;
   latitud: number | null;
   longitud: number | null;
+  /** La hora de la foto se corrigió porque el reloj del celular estaba mal. */
+  horaAjustada?: boolean;
 };
 
 export type ConjuntoMarcaAgua = {
@@ -87,6 +93,9 @@ export type ConjuntoMarcaAgua = {
 const CapturaSchema = z
   .object({
     tomadaEn: z.string().nullish(),
+    // Hora de la toma según el reloj monotónico del celular (app Android): no
+    // cambia si alguien mueve la hora del teléfono.
+    tomadaEnEstimada: z.string().nullish(),
     latitud: z.number().min(-90).max(90).nullish(),
     longitud: z.number().min(-180).max(180).nullish(),
   })
@@ -97,11 +106,16 @@ const CapturaSchema = z
  * `evidenciasCaptura`, JSON alineado con el orden de `files`). Es metadato de
  * apoyo: si viene mal formado se ignora y la foto queda marcada solo con la
  * hora de subida; nunca hace fallar el cierre.
+ *
+ * `desfaseRelojMs`: cuánto estaba corrido el reloj del celular al enviar (ver
+ * `horaSinConexion.ts`); sirve para corregir fotos de un cierre sin señal
+ * cuando no hay hora estimada.
  */
 export function parsearCapturasEvidencias(
   raw: unknown,
   cantidad: number,
   ahora: Date = new Date(),
+  desfaseRelojMs: number | null = null,
 ): Array<CapturaEvidencia | null> {
   const vacias = Array.from({ length: cantidad }, () => null);
   if (typeof raw !== "string" || !raw.trim()) return vacias;
@@ -118,15 +132,19 @@ export function parsearCapturasEvidencias(
     const item = CapturaSchema.safeParse(lista[i]);
     if (!item.success || !item.data) return null;
 
+    const resuelta = resolverHora({
+      hora: parsearFecha(item.data.tomadaEn),
+      horaEstimada: parsearFecha(item.data.tomadaEnEstimada),
+      desfaseMs: desfaseRelojMs,
+      recibidoEn: ahora,
+    });
     let tomadaEn: Date | null = null;
-    if (item.data.tomadaEn) {
-      const fecha = new Date(item.data.tomadaEn);
-      const t = fecha.getTime();
+    // Una hora en el futuro no se "corrige" a ahora: no se sabe cuándo se tomó.
+    if (resuelta.hora && resuelta.motivo !== "FUTURO") {
+      const t = resuelta.hora.getTime();
       const valida =
-        Number.isFinite(t) &&
-        t <= ahora.getTime() + TOLERANCIA_FUTURO_MS &&
-        t >= ahora.getTime() - ANTIGUEDAD_MAXIMA_MS;
-      if (valida) tomadaEn = fecha;
+        t <= ahora.getTime() + TOLERANCIA_FUTURO_MS && t >= ahora.getTime() - ANTIGUEDAD_MAXIMA_MS;
+      if (valida) tomadaEn = resuelta.hora;
     }
 
     const conGps = item.data.latitud != null && item.data.longitud != null;
@@ -134,6 +152,7 @@ export function parsearCapturasEvidencias(
       tomadaEn,
       latitud: conGps ? item.data.latitud! : null,
       longitud: conGps ? item.data.longitud! : null,
+      ...(tomadaEn && resuelta.ajustada ? { horaAjustada: true } : {}),
     };
     return captura.tomadaEn || conGps ? captura : null;
   });
@@ -179,14 +198,21 @@ export function lineasMarcaAgua(params: {
   conjunto: ConjuntoMarcaAgua;
   /** Dirección donde se tomó la foto (según su GPS), si se pudo averiguar. */
   direccionGps?: DireccionGps | null;
+  /** El cierre venía de la cola sin señal de la app. */
+  sinConexion?: boolean;
 }): string[] {
-  const { captura, subidaEn, conjunto, direccionGps } = params;
+  const { captura, subidaEn, conjunto, direccionGps, sinConexion } = params;
   const lineas: string[] = [];
 
   if (captura?.tomadaEn) {
+    // La hora de la toma va primero: es la que vale aunque haya llegado tarde.
     lineas.push(formatearFechaMarcaAgua(captura.tomadaEn));
     if (subidaEn.getTime() - captura.tomadaEn.getTime() > DIFERENCIA_PARA_MOSTRAR_SUBIDA_MS) {
-      lineas.push(`Subida ${formatearFechaMarcaAgua(subidaEn)}`);
+      lineas.push(
+        sinConexion
+          ? `Enviada ${formatearFechaMarcaAgua(subidaEn)} (sin señal)`
+          : `Subida ${formatearFechaMarcaAgua(subidaEn)}`,
+      );
     }
   } else {
     // Archivo adjuntado (galería, pegado) o sin hora confiable: solo se
@@ -345,6 +371,10 @@ export type ParametrosMarcaEvidencias = {
   capturas: unknown;
   conjunto: ConjuntoMarcaAgua;
   subidaEn?: Date;
+  /** Cierre que llegó de la cola sin señal de la app. */
+  sinConexion?: boolean;
+  /** Cuánto estaba corrido el reloj del celular al enviar (ms). */
+  desfaseRelojMs?: number | null;
 };
 
 /**
@@ -360,12 +390,20 @@ export type ParametrosMarcaEvidencias = {
 export function estamparEvidencias(params: ParametrosMarcaEvidencias): Promise<void>[] {
   const files = params.files ?? [];
   const subidaEn = params.subidaEn ?? new Date();
-  const capturas = parsearCapturasEvidencias(params.capturas, files.length, subidaEn);
+  const capturas = parsearCapturasEvidencias(
+    params.capturas,
+    files.length,
+    subidaEn,
+    params.desfaseRelojMs ?? null,
+  );
+  const esperaDireccion = params.sinConexion
+    ? ESPERA_MAXIMA_DIRECCION_SIN_SENAL_MS
+    : ESPERA_MAXIMA_DIRECCION_MS;
 
   // Una consulta por punto, todas a la vez y con espera acotada.
   const direcciones = capturas.map((c) =>
     c?.latitud != null && c.longitud != null
-      ? direccionGpsSinDemora(c.latitud, c.longitud, ESPERA_MAXIMA_DIRECCION_MS)
+      ? direccionGpsSinDemora(c.latitud, c.longitud, esperaDireccion)
       : Promise.resolve(null),
   );
 
@@ -380,6 +418,7 @@ export function estamparEvidencias(params: ParametrosMarcaEvidencias): Promise<v
           subidaEn,
           conjunto: params.conjunto,
           direccionGps: await direcciones[i],
+          sinConexion: params.sinConexion,
         });
         const estampada = await estamparMarcaAgua(await fs.promises.readFile(f.path), lineas);
         await fs.promises.writeFile(f.path, estampada);

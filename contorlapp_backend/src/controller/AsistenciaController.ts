@@ -34,6 +34,13 @@ const CheckinBody = z.object({
   latitud: z.coerce.number().min(-90).max(90).optional().nullable(),
   longitud: z.coerce.number().min(-180).max(180).optional().nullable(),
   precisionMetros: z.coerce.number().min(0).max(100000).optional().nullable(),
+  // App Android: escaneo guardado sin señal y enviado después (ver
+  // utils/horaSinConexion.ts). Sin `sinConexion` vale la hora del servidor.
+  clienteRegistroId: z.string().uuid().optional().nullable(),
+  registradaEn: z.string().max(40).optional().nullable(),
+  registradaEnEstimada: z.string().max(40).optional().nullable(),
+  sinConexion: z.boolean().optional(),
+  horaDispositivoEnvio: z.string().max(40).optional().nullable(),
 });
 
 const UpsertRegistroBody = z.object({
@@ -168,6 +175,11 @@ export class AsistenciaController {
         latitud: body.latitud ?? null,
         longitud: body.longitud ?? null,
         precisionMetros: body.precisionMetros ?? null,
+        clienteRegistroId: body.clienteRegistroId ?? null,
+        registradaEn: body.registradaEn ?? null,
+        registradaEnEstimada: body.registradaEnEstimada ?? null,
+        sinConexion: body.sinConexion === true,
+        horaDispositivoEnvio: body.horaDispositivoEnvio ?? null,
       };
       // Los supervisores marcan visitas (varias por día, en varios
       // conjuntos); los operarios, su asistencia diaria.

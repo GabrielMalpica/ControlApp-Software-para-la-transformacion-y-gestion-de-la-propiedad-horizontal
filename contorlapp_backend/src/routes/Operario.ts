@@ -7,6 +7,7 @@ import { requireRoles } from "../middlewares/role.middleware";
 import { uploadEvidencias } from "../middlewares/upload_evidencias";
 import { requireSelfScope } from "../middlewares/tenant.middleware";
 import { taskClosingRateLimit } from "../middlewares/task-closing-rate-limit.middleware";
+import { dedupeCierrePorCabecera } from "../middlewares/cierre-idempotencia.middleware";
 
 const router = Router();
 const controller = new OperarioController();
@@ -35,8 +36,15 @@ router.post(
   "/operarios/:operarioId/tareas/:tareaId/cerrar",
   requirePermission("tareas.cerrar"),
   taskClosingRateLimit,
+  dedupeCierrePorCabecera,
   uploadEvidencias.array("files", 10),
   controller.cerrarTareaConEvidencias,
+);
+// ¿Ya entró este cierre de la cola sin señal? (evita reenviar las fotos)
+router.get(
+  "/operarios/:operarioId/cierres/:clienteCierreId",
+  requirePermission("tareas.cerrar"),
+  controller.estadoCierre,
 );
 router.post(
   "/operarios/:operarioId/tareas/:tareaId/no-completada",

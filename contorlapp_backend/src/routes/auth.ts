@@ -11,6 +11,7 @@ router.post("/login", controller.login);
 // Responde 410: la recuperacion con correo + cedula quedo desactivada.
 router.post("/recuperar-contrasena", controller.recuperarContrasena);
 router.post("/refresh", controller.refresh);
+router.post("/refresh-app", controller.refreshApp);
 router.post("/logout", authOptional, controller.logout);
 router.post("/logout-todas", authRequired, controller.logoutTodas);
 router.get("/me", authRequired, controller.me);

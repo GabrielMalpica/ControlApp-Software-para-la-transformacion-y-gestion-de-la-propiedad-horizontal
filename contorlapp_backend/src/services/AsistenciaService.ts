@@ -1,10 +1,11 @@
 import { randomUUID } from "crypto";
-import type { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 
 import { AuditoriaService } from "./AuditoriaService";
 import { diaSemanaFromDate, obtenerCalendariosOperarios, obtenerHorariosEfectivosOperarios } from "../utils/operarioAvailability";
 import type { DiaCalendarioPlaza } from "../utils/calendarioPlazaCore";
 import { validarUbicacionEnConjunto } from "../utils/ubicacionMaps";
+import { desfaseRelojMs, parsearFecha, resolverHora } from "../utils/horaSinConexion";
 import {
   conjuntoEnAlcance,
   filtroConjuntoEnAlcance,
@@ -23,10 +24,67 @@ type PeriodoAsistencia = {
   mes: number;
 };
 
-function makeHttpError(status: number, message: string) {
-  const err = new Error(message) as Error & { status: number };
+function makeHttpError(status: number, message: string, code?: string) {
+  const err = new Error(message) as Error & { status: number; code?: string };
   err.status = status;
+  if (code) err.code = code;
   return err;
+}
+
+/**
+ * Escaneo hecho sin señal en la app Android y enviado después (ver
+ * `utils/horaSinConexion.ts`). Sin `sinConexion` la hora es la del servidor,
+ * como siempre.
+ */
+export type DatosEscaneoSinConexion = {
+  clienteRegistroId?: string | null;
+  registradaEn?: string | null;
+  registradaEnEstimada?: string | null;
+  sinConexion?: boolean;
+  horaDispositivoEnvio?: string | null;
+};
+
+/** Cuánto tiempo después puede llegar una asistencia hecha sin señal. */
+function maxHorasSinSenal(): number {
+  const horas = Number(process.env.ASISTENCIA_SIN_SENAL_MAX_HORAS ?? 168);
+  return Number.isFinite(horas) ? Math.min(Math.max(horas, 1), 720) : 168;
+}
+
+type MomentoEscaneo = { ahora: Date; recibidoEn: Date; sinConexion: boolean; ajustada: boolean };
+
+export function resolverMomentoEscaneo(
+  input: DatosEscaneoSinConexion,
+  recibidoEn: Date = new Date(),
+): MomentoEscaneo {
+  if (!input.sinConexion) {
+    return { ahora: recibidoEn, recibidoEn, sinConexion: false, ajustada: false };
+  }
+  const resuelta = resolverHora({
+    hora: parsearFecha(input.registradaEn),
+    horaEstimada: parsearFecha(input.registradaEnEstimada),
+    desfaseMs: desfaseRelojMs(input.horaDispositivoEnvio, recibidoEn),
+    recibidoEn,
+  });
+  const ahora = resuelta.hora ?? recibidoEn;
+  if (recibidoEn.getTime() - ahora.getTime() > maxHorasSinSenal() * 3_600_000) {
+    throw makeHttpError(
+      400,
+      "Este registro de asistencia es muy antiguo para enviarse. Pídele a tu supervisor que lo registre a mano.",
+      "ASISTENCIA_FUERA_DE_VENTANA",
+    );
+  }
+  return { ahora, recibidoEn, sinConexion: true, ajustada: resuelta.ajustada };
+}
+
+function esDuplicadoAsistencia(err: unknown): boolean {
+  if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== "P2002") {
+    return false;
+  }
+  const meta = (err.meta as { target?: unknown; modelName?: unknown } | undefined) ?? {};
+  const texto = `${String(meta.modelName ?? "")} ${
+    Array.isArray(meta.target) ? meta.target.join(",") : String(meta.target ?? "")
+  }`;
+  return /AsistenciaIdempotencia|clienteRegistroId/i.test(texto);
 }
 
 const CONCEPTOS_DEFAULT: Array<{
@@ -124,6 +182,8 @@ type RegistroConConcepto = {
   longitudSalida: DecimalLike;
   observacion: string | null;
   concepto: { codigo: string; nombre: string; colorHex: string };
+  entradaSinConexion?: boolean | null;
+  salidaSinConexion?: boolean | null;
 };
 
 function toNumberOrNull(value: DecimalLike): number | null {
@@ -152,6 +212,9 @@ function serializeRegistro(registro: RegistroConConcepto) {
         ? { lat: toNumberOrNull(registro.latitudSalida)!, lng: toNumberOrNull(registro.longitudSalida)! }
         : null,
     observacion: registro.observacion,
+    // Marcado sin señal en el conjunto y enviado después desde la app.
+    entradaSinConexion: Boolean(registro.entradaSinConexion),
+    salidaSinConexion: Boolean(registro.salidaSinConexion),
   };
 }
 
@@ -177,6 +240,19 @@ function serializarVisitaDetalle(v: {
   };
 }
 
+type RegistroSerializado = ReturnType<typeof serializeRegistro>;
+
+/** Resultado de un escaneo de QR (operario o supervisor). */
+type ResultadoEscaneo = {
+  tipo: "ENTRADA" | "SALIDA";
+  registro: RegistroSerializado;
+  conjuntoNombre: string;
+  /** Reintento de un escaneo que ya había entrado. */
+  duplicado?: true;
+};
+
+type EscrituraEscaneo = ResultadoEscaneo & { registroId?: number; visitaId?: number };
+
 /** Misma forma que serializeRegistro para que la app muestre el resultado igual. */
 function serializarVisita(v: {
   id: number;
@@ -186,7 +262,9 @@ function serializarVisita(v: {
   longitudEntrada: DecimalLike;
   latitudSalida: DecimalLike;
   longitudSalida: DecimalLike;
-}) {
+  entradaSinConexion?: boolean | null;
+  salidaSinConexion?: boolean | null;
+}): RegistroSerializado {
   return {
     id: v.id,
     conceptoId: 0,
@@ -205,6 +283,8 @@ function serializarVisita(v: {
         ? { lat: toNumberOrNull(v.latitudSalida)!, lng: toNumberOrNull(v.longitudSalida)! }
         : null,
     observacion: null,
+    entradaSinConexion: Boolean(v.entradaSinConexion),
+    salidaSinConexion: Boolean(v.salidaSinConexion),
   };
 }
 
@@ -405,12 +485,16 @@ export class AsistenciaService {
       },
     });
     if (!conjunto || !conjunto.qrAsistenciaToken) {
-      throw makeHttpError(404, "El conjunto no tiene un QR de asistencia configurado");
+      throw makeHttpError(404, "El conjunto no tiene un QR de asistencia configurado", "QR_NO_CONFIGURADO");
     }
 
     const payloadEsperado = `${QR_PREFIX}|${conjunto.nit}|${conjunto.qrAsistenciaToken}`;
     if (input.qrPayload.trim() !== payloadEsperado) {
-      throw makeHttpError(400, "El codigo QR no es valido o ya fue reemplazado. Pide uno nuevo en el sitio.");
+      throw makeHttpError(
+        400,
+        "El codigo QR no es valido o ya fue reemplazado. Pide uno nuevo en el sitio.",
+        "QR_INVALIDO",
+      );
     }
 
     // Toda asistencia por QR requiere ubicación del dispositivo y coordenadas
@@ -430,6 +514,96 @@ export class AsistenciaService {
     return { conjunto, ubicacion };
   }
 
+  /**
+   * Reintento de un escaneo que ya entró (la app no recibió la respuesta):
+   * devuelve el mismo resultado sin registrar nada de nuevo.
+   */
+  private async escaneoYaRegistrado(clienteRegistroId: string, usuarioId: string) {
+    const fila = await this.prisma.asistenciaIdempotencia.findUnique({
+      where: { clienteRegistroId },
+    });
+    if (!fila) return null;
+    if (fila.usuarioId !== usuarioId) {
+      throw makeHttpError(
+        409,
+        "Este registro ya se usó con otro usuario. Escanea de nuevo.",
+        "CLIENTE_REGISTRO_REUTILIZADO",
+      );
+    }
+    const tipo = fila.tipo === "SALIDA" ? ("SALIDA" as const) : ("ENTRADA" as const);
+    if (fila.registroId != null) {
+      const registro = await this.prisma.registroAsistencia.findUnique({
+        where: { id: fila.registroId },
+        include: { concepto: true, conjunto: { select: { nombre: true } } },
+      });
+      if (registro) {
+        return {
+          tipo,
+          registro: serializeRegistro(registro),
+          conjuntoNombre: registro.conjunto?.nombre ?? "",
+          duplicado: true as const,
+        };
+      }
+    }
+    if (fila.visitaId != null) {
+      const visita = await this.prisma.visitaSupervisor.findUnique({
+        where: { id: fila.visitaId },
+        include: { conjunto: { select: { nombre: true } } },
+      });
+      if (visita) {
+        return {
+          tipo,
+          registro: serializarVisita(visita),
+          conjuntoNombre: visita.conjunto.nombre,
+          duplicado: true as const,
+        };
+      }
+    }
+    throw makeHttpError(
+      410,
+      "Este registro de asistencia ya entró, pero después lo borraron.",
+      "ASISTENCIA_ELIMINADA",
+    );
+  }
+
+  /**
+   * Con `clienteRegistroId` (app Android) la escritura y la marca de
+   * idempotencia van juntas; si dos copias llegan a la vez, la segunda
+   * devuelve lo que registró la primera.
+   */
+  private async registrarConIdempotencia(params: {
+    clienteRegistroId?: string | null;
+    usuarioId: string;
+    escribir: (db: Prisma.TransactionClient | PrismaClient) => Promise<EscrituraEscaneo>;
+  }): Promise<ResultadoEscaneo> {
+    const { clienteRegistroId, usuarioId } = params;
+    if (!clienteRegistroId) {
+      const { registroId: _r, visitaId: _v, ...resultado } = await params.escribir(this.prisma);
+      return resultado;
+    }
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const { registroId, visitaId, ...resultado } = await params.escribir(tx);
+        await tx.asistenciaIdempotencia.create({
+          data: {
+            clienteRegistroId,
+            usuarioId,
+            tipo: resultado.tipo,
+            registroId: registroId ?? null,
+            visitaId: visitaId ?? null,
+          },
+        });
+        return resultado;
+      });
+    } catch (err) {
+      if (esDuplicadoAsistencia(err)) {
+        const previo = await this.escaneoYaRegistrado(clienteRegistroId, usuarioId);
+        if (previo) return previo;
+      }
+      throw err;
+    }
+  }
+
   async checkin(input: {
     operarioId: string;
     conjuntoId: string;
@@ -437,7 +611,14 @@ export class AsistenciaService {
     latitud?: number | null;
     longitud?: number | null;
     precisionMetros?: number | null;
-  }) {
+  } & DatosEscaneoSinConexion) {
+    if (input.clienteRegistroId) {
+      const previo = await this.escaneoYaRegistrado(input.clienteRegistroId, input.operarioId);
+      if (previo) return previo;
+    }
+    // Hora del escaneo: la del servidor, o la del celular si se hizo sin señal.
+    const momento = resolverMomentoEscaneo(input);
+
     const { conjunto } = await this.validarQrYUbicacion(input);
 
     const operario = await this.prisma.operario.findUnique({
@@ -448,7 +629,7 @@ export class AsistenciaService {
 
     await this.ensureConceptosSeed(operario.empresaId);
 
-    const ahora = new Date();
+    const ahora = momento.ahora;
     const hoyYmd = toYmd(ahora);
     const fecha = parseYmdAsUtcDate(hoyYmd);
     // `Festivo.fecha` se guarda a medianoche LOCAL (ver
@@ -507,52 +688,86 @@ export class AsistenciaService {
       throw makeHttpError(500, "No se pudo resolver el concepto de asistencia por defecto");
     }
 
-    const existente = await this.prisma.registroAsistencia.findUnique({
-      where: { operarioId_fecha: { operarioId: operario.id, fecha } },
+    const flagsEntrada = momento.sinConexion
+      ? {
+          entradaSinConexion: true,
+          entradaRecibidaEn: momento.recibidoEn,
+          ...(momento.ajustada ? { relojAjustado: true } : {}),
+        }
+      : {};
+    const flagsSalida = momento.sinConexion
+      ? {
+          salidaSinConexion: true,
+          salidaRecibidaEn: momento.recibidoEn,
+          ...(momento.ajustada ? { relojAjustado: true } : {}),
+        }
+      : {};
+
+    return this.registrarConIdempotencia({
+      clienteRegistroId: input.clienteRegistroId,
+      usuarioId: input.operarioId,
+      escribir: async (db) => {
+        const existente = await db.registroAsistencia.findUnique({
+          where: { operarioId_fecha: { operarioId: operario.id, fecha } },
+        });
+
+        if (!existente) {
+          const creado = await db.registroAsistencia.create({
+            data: {
+              operarioId: operario.id,
+              conjuntoId: conjunto.nit,
+              fecha,
+              conceptoId: conceptoAsistencia.id,
+              horaEntrada: ahora,
+              latitudEntrada: input.latitud ?? null,
+              longitudEntrada: input.longitud ?? null,
+              origen: "QR",
+              observacion,
+              ...flagsEntrada,
+            },
+            include: { concepto: true },
+          });
+
+          return {
+            tipo: "ENTRADA" as const,
+            registro: serializeRegistro(creado),
+            conjuntoNombre: conjunto.nombre,
+            registroId: creado.id,
+          };
+        }
+
+        if (existente.horaEntrada && !existente.horaSalida) {
+          // Escaneos sin señal llegan en orden, pero un reloj mal puesto podría
+          // dejar la salida antes de la entrada.
+          if (momento.sinConexion && ahora.getTime() < existente.horaEntrada.getTime()) {
+            throw makeHttpError(
+              409,
+              "La salida quedó con una hora anterior a la entrada. Revisa la hora del celular y pide a tu supervisor que la registre.",
+              "ASISTENCIA_ORDEN_INVALIDO",
+            );
+          }
+          const actualizado = await db.registroAsistencia.update({
+            where: { id: existente.id },
+            data: {
+              horaSalida: ahora,
+              latitudSalida: input.latitud ?? null,
+              longitudSalida: input.longitud ?? null,
+              ...flagsSalida,
+            },
+            include: { concepto: true },
+          });
+
+          return {
+            tipo: "SALIDA" as const,
+            registro: serializeRegistro(actualizado),
+            conjuntoNombre: conjunto.nombre,
+            registroId: actualizado.id,
+          };
+        }
+
+        throw makeHttpError(409, "Ya registraste entrada y salida hoy.", "ASISTENCIA_COMPLETA");
+      },
     });
-
-    if (!existente) {
-      const creado = await this.prisma.registroAsistencia.create({
-        data: {
-          operarioId: operario.id,
-          conjuntoId: conjunto.nit,
-          fecha,
-          conceptoId: conceptoAsistencia.id,
-          horaEntrada: ahora,
-          latitudEntrada: input.latitud ?? null,
-          longitudEntrada: input.longitud ?? null,
-          origen: "QR",
-          observacion,
-        },
-        include: { concepto: true },
-      });
-
-      return {
-        tipo: "ENTRADA" as const,
-        registro: serializeRegistro(creado),
-        conjuntoNombre: conjunto.nombre,
-      };
-    }
-
-    if (existente.horaEntrada && !existente.horaSalida) {
-      const actualizado = await this.prisma.registroAsistencia.update({
-        where: { id: existente.id },
-        data: {
-          horaSalida: ahora,
-          latitudSalida: input.latitud ?? null,
-          longitudSalida: input.longitud ?? null,
-        },
-        include: { concepto: true },
-      });
-
-      return {
-        tipo: "SALIDA" as const,
-        registro: serializeRegistro(actualizado),
-        conjuntoNombre: conjunto.nombre,
-      };
-    }
-
-    throw makeHttpError(409, "Ya registraste entrada y salida hoy.");
   }
 
   /* ------------------------- visitas de supervisores ------------------------ */
@@ -571,7 +786,13 @@ export class AsistenciaService {
     latitud?: number | null;
     longitud?: number | null;
     precisionMetros?: number | null;
-  }) {
+  } & DatosEscaneoSinConexion) {
+    if (input.clienteRegistroId) {
+      const previo = await this.escaneoYaRegistrado(input.clienteRegistroId, input.supervisorId);
+      if (previo) return previo;
+    }
+    const momento = resolverMomentoEscaneo(input);
+
     const supervisor = await this.prisma.supervisor.findUnique({
       where: { id: input.supervisorId },
       select: { id: true },
@@ -580,47 +801,64 @@ export class AsistenciaService {
 
     const { conjunto, ubicacion } = await this.validarQrYUbicacion(input);
 
-    const ahora = new Date();
+    const ahora = momento.ahora;
     const fecha = parseYmdAsUtcDate(toYmd(ahora));
 
-    const abierta = await this.prisma.visitaSupervisor.findFirst({
-      where: { supervisorId: supervisor.id, conjuntoId: conjunto.nit, fecha, horaSalida: null },
-      orderBy: { horaEntrada: "desc" },
-    });
+    return this.registrarConIdempotencia({
+      clienteRegistroId: input.clienteRegistroId,
+      usuarioId: input.supervisorId,
+      escribir: async (db) => {
+        const abierta = await db.visitaSupervisor.findFirst({
+          where: { supervisorId: supervisor.id, conjuntoId: conjunto.nit, fecha, horaSalida: null },
+          orderBy: { horaEntrada: "desc" },
+        });
 
-    if (abierta) {
-      const actualizada = await this.prisma.visitaSupervisor.update({
-        where: { id: abierta.id },
-        data: {
-          horaSalida: ahora,
-          latitudSalida: input.latitud ?? null,
-          longitudSalida: input.longitud ?? null,
-          distanciaSalidaMetros: ubicacion.distanciaMetros,
-        },
-      });
-      return {
-        tipo: "SALIDA" as const,
-        registro: serializarVisita(actualizada),
-        conjuntoNombre: conjunto.nombre,
-      };
-    }
+        if (abierta) {
+          if (momento.sinConexion && ahora.getTime() < abierta.horaEntrada.getTime()) {
+            throw makeHttpError(
+              409,
+              "La salida quedó con una hora anterior a la entrada. Revisa la hora del celular.",
+              "ASISTENCIA_ORDEN_INVALIDO",
+            );
+          }
+          const actualizada = await db.visitaSupervisor.update({
+            where: { id: abierta.id },
+            data: {
+              horaSalida: ahora,
+              latitudSalida: input.latitud ?? null,
+              longitudSalida: input.longitud ?? null,
+              distanciaSalidaMetros: ubicacion.distanciaMetros,
+              ...(momento.sinConexion ? { salidaSinConexion: true } : {}),
+            },
+          });
+          return {
+            tipo: "SALIDA" as const,
+            registro: serializarVisita(actualizada),
+            conjuntoNombre: conjunto.nombre,
+            visitaId: actualizada.id,
+          };
+        }
 
-    const creada = await this.prisma.visitaSupervisor.create({
-      data: {
-        supervisorId: supervisor.id,
-        conjuntoId: conjunto.nit,
-        fecha,
-        horaEntrada: ahora,
-        latitudEntrada: input.latitud ?? null,
-        longitudEntrada: input.longitud ?? null,
-        distanciaEntradaMetros: ubicacion.distanciaMetros,
+        const creada = await db.visitaSupervisor.create({
+          data: {
+            supervisorId: supervisor.id,
+            conjuntoId: conjunto.nit,
+            fecha,
+            horaEntrada: ahora,
+            latitudEntrada: input.latitud ?? null,
+            longitudEntrada: input.longitud ?? null,
+            distanciaEntradaMetros: ubicacion.distanciaMetros,
+            ...(momento.sinConexion ? { entradaSinConexion: true } : {}),
+          },
+        });
+        return {
+          tipo: "ENTRADA" as const,
+          registro: serializarVisita(creada),
+          conjuntoNombre: conjunto.nombre,
+          visitaId: creada.id,
+        };
       },
     });
-    return {
-      tipo: "ENTRADA" as const,
-      registro: serializarVisita(creada),
-      conjuntoNombre: conjunto.nombre,
-    };
   }
 
   /**

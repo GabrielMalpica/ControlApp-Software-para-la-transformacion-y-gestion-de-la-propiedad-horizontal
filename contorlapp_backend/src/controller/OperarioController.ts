@@ -8,6 +8,7 @@ import { InventarioService } from "../services/InventarioServices";
 // ── Schemas ─────────────────────────────────────────────────────────────────
 const OperarioIdParam = z.object({ operarioId: z.coerce.number().int().positive() });
 const TareaIdParam   = z.object({ tareaId: z.coerce.number().int().positive() });
+const ClienteCierreIdParam = z.object({ clienteCierreId: z.string().uuid() });
 
 // Query/body helpers
 const FechaQuery = z.object({ fecha: z.coerce.date() });
@@ -136,7 +137,7 @@ export class OperarioController {
       const service = new OperarioService(prisma, operarioId);
       const files = (req.files as Express.Multer.File[]) ?? [];
 
-      await service.cerrarTareaConEvidencias(
+      const resultado = await service.cerrarTareaConEvidencias(
         tareaId,
         {
           accion: req.body.accion,
@@ -145,6 +146,9 @@ export class OperarioController {
           insumosUsados: req.body.insumosUsados,
           clienteCierreId: req.body.clienteCierreId,
           evidenciasCaptura: req.body.evidenciasCaptura,
+          sinConexion: req.body.sinConexion,
+          horaDispositivoEnvio: req.body.horaDispositivoEnvio,
+          horaEstimada: req.body.horaEstimada,
         },
         files,
       );
@@ -160,7 +164,21 @@ export class OperarioController {
         ).toFixed(2)} s`,
       );
 
-      res.json({ ok: true });
+      res.json(resultado.duplicado ? { ok: true, duplicado: true } : { ok: true });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  // GET /operarios/:operarioId/cierres/:clienteCierreId
+  // La cola de la app pregunta si un cierre ya entró antes de reenviar fotos.
+  estadoCierre: RequestHandler = async (req, res, next) => {
+    try {
+      const { operarioId } = OperarioIdParam.parse(req.params);
+      assertOperarioMatchesSession(req, operarioId);
+      const { clienteCierreId } = ClienteCierreIdParam.parse(req.params);
+      const service = new OperarioService(prisma, operarioId);
+      res.json(await service.estadoCierreCliente(clienteCierreId));
     } catch (err) {
       next(err);
     }

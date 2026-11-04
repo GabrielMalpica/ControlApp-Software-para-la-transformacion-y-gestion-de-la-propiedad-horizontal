@@ -15,20 +15,32 @@ import { esOrigenPermitido } from "../utils/origenesPermitidos";
 const LoginSchema = z.object({
   correo: z.string().email(),
   contrasena: z.string().min(1),
-  // La app web pide sesion con cookie HttpOnly de renovacion; la movil no.
+  // La app web pide sesion con cookie HttpOnly de renovacion; la app Android
+  // pide un token de renovacion en el cuerpo (sesionApp).
   sesionWeb: z.boolean().optional(),
+  sesionApp: z.boolean().optional(),
 });
 
 const CambiarContrasenaSchema = z.object({
   contrasenaActual: z.string().min(1),
   nuevaContrasena: z.string().min(8),
   sesionWeb: z.boolean().optional(),
+  sesionApp: z.boolean().optional(),
 });
 
 const CambiarContrasenaInicialSchema = z.object({
   nuevaContrasena: z.string().min(8),
   sesionWeb: z.boolean().optional(),
+  sesionApp: z.boolean().optional(),
 });
+
+const RefreshAppSchema = z.object({
+  refreshToken: z.string().min(20).max(200),
+});
+
+const LogoutSchema = z
+  .object({ refreshToken: z.string().min(20).max(200).optional() })
+  .passthrough();
 
 const CambiarContrasenaUsuarioSchema = z.object({
   nuevaContrasena: z.string().min(8),
@@ -103,21 +115,36 @@ function asegurarOrigenWeb(req: Request) {
   }
 }
 
-function opcionesSesion(req: Request, sesionWeb?: boolean): OpcionesSesion {
+function opcionesSesion(
+  req: Request,
+  pedido: { sesionWeb?: boolean; sesionApp?: boolean },
+): OpcionesSesion {
   return {
-    sesionWeb: sesionWeb === true,
+    sesionWeb: pedido.sesionWeb === true,
+    sesionApp: pedido.sesionApp === true,
     userAgent: String(req.headers["user-agent"] ?? "") || null,
   };
 }
 
-/** Responde una sesion emitida: el token de renovacion va solo en la cookie. */
+/**
+ * Responde una sesion emitida. Web: el token de renovacion va solo en la
+ * cookie HttpOnly. App Android: va en el cuerpo (no hay cookies ni JS ajeno).
+ */
 function responderSesion(res: Response, sesion: SesionEmitida, extra: Record<string, unknown> = {}) {
-  if (sesion.refresh) ponerCookieSesion(res, sesion.refresh);
+  const web = Boolean(sesion.refresh) && sesion.canal !== "app";
+  const app = Boolean(sesion.refresh) && sesion.canal === "app";
+  if (web && sesion.refresh) ponerCookieSesion(res, sesion.refresh);
   res.json({
     ...extra,
     token: sesion.token,
     tokenExpiraEn: sesion.tokenExpiraEn.toISOString(),
-    sesionWeb: Boolean(sesion.refresh),
+    sesionWeb: web,
+    ...(app && sesion.refresh
+      ? {
+          refreshToken: sesion.refresh.token,
+          refreshExpiraEn: sesion.refresh.expiraEn.toISOString(),
+        }
+      : {}),
     user: sesion.user,
   });
 }
@@ -134,12 +161,12 @@ export class AuthController {
   // POST /auth/login
   login: RequestHandler = async (req, res, next) => {
     try {
-      const { correo, contrasena, sesionWeb } = LoginSchema.parse(req.body);
+      const { correo, contrasena, ...pedido } = LoginSchema.parse(req.body);
 
       const sesion = await service.login(
         correo.trim().toLowerCase(),
         contrasena,
-        opcionesSesion(req, sesionWeb),
+        opcionesSesion(req, pedido),
       );
 
       responderSesion(res, sesion);
@@ -175,6 +202,29 @@ export class AuthController {
         }
         throw err;
       }
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  // POST /auth/refresh-app (app Android; token de renovacion en el cuerpo).
+  // Sin cookie no hay CSRF que cuidar: el token es el secreto.
+  refreshApp: RequestHandler = async (req, res, next) => {
+    try {
+      const parsed = RefreshAppSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        res.status(401).json({
+          ok: false,
+          message: "Tu sesión expiró. Inicia sesión de nuevo.",
+          code: "SESION_INVALIDA",
+        });
+        return;
+      }
+      const sesion = await service.refrescarSesionApp(
+        parsed.data.refreshToken,
+        String(req.headers["user-agent"] ?? "") || null,
+      );
+      responderSesion(res, sesion);
     } catch (err) {
       next(err);
     }
@@ -220,14 +270,14 @@ export class AuthController {
         return;
       }
 
-      const { contrasenaActual, nuevaContrasena, sesionWeb } =
+      const { contrasenaActual, nuevaContrasena, ...pedido } =
         CambiarContrasenaSchema.parse(req.body);
 
       const sesion = await service.cambiarContrasena(
         userId,
         contrasenaActual,
         nuevaContrasena,
-        opcionesSesion(req, sesionWeb),
+        opcionesSesion(req, pedido),
       );
 
       responderSesion(res, sesion, { ok: true, message: "Contrasena actualizada correctamente" });
@@ -244,12 +294,12 @@ export class AuthController {
         return;
       }
 
-      const { nuevaContrasena, sesionWeb } = CambiarContrasenaInicialSchema.parse(req.body);
+      const { nuevaContrasena, ...pedido } = CambiarContrasenaInicialSchema.parse(req.body);
 
       const sesion = await service.cambiarContrasenaInicial(
         userId,
         nuevaContrasena,
-        opcionesSesion(req, sesionWeb),
+        opcionesSesion(req, pedido),
       );
 
       responderSesion(res, sesion, {
@@ -310,6 +360,11 @@ export class AuthController {
       // cerrarle la sesion al usuario con un POST cruzado.
       if (tokenRefresh && origin && esOrigenPermitido(origin)) {
         await revocarSesionRefreshPorToken(prisma, tokenRefresh, "LOGOUT");
+      }
+      // App Android: manda su token de renovacion en el cuerpo para cerrarlo.
+      const cuerpo = LogoutSchema.safeParse(req.body ?? {});
+      if (cuerpo.success && cuerpo.data.refreshToken) {
+        await revocarSesionRefreshPorToken(prisma, cuerpo.data.refreshToken, "LOGOUT");
       }
       borrarCookieSesion(res);
       res.status(204).send();

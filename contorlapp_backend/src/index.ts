@@ -38,6 +38,8 @@ import {
   isTaskClosingRequest,
   taskClosingIpRateLimit,
 } from "./middlewares/task-closing-rate-limit.middleware";
+import { exigirVersionMinimaApp } from "./middlewares/version-app.middleware";
+import { estadoRedis, getRedis } from "./services/RedisService";
 
 if (!process.env.JWT_SECRET) {
   throw new Error("Falta JWT_SECRET en el archivo .env");
@@ -72,7 +74,16 @@ const corsOptions = {
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  // X-Cliente-Cierre-Id: deduplica reenvios de cierres antes de recibir las
+  // fotos. X-App-*: version de la app (la web tambien puede mandarlas).
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "If-None-Match",
+    "X-Cliente-Cierre-Id",
+    "X-App-Version",
+    "X-App-Plataforma",
+  ],
 };
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
@@ -165,6 +176,7 @@ const uploadLimit = distributedRateLimit({
 app.use("/auth/login", loginIpLimit, loginEmailLimit);
 app.use("/auth/recuperar-contrasena", passwordRecoveryLimit);
 app.use("/auth/refresh", sessionRefreshLimit);
+app.use("/auth/refresh-app", sessionRefreshLimit);
 app.use("/commerce/catalogo", publicCatalogLimit);
 app.set("json replacer", (_k: string, v: unknown) =>
   typeof v === "bigint" ? v.toString() : v,
@@ -184,7 +196,27 @@ app.get("/ping", async (_req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+// Healthcheck de Railway: solo dice que el proceso responde (no toca la BD,
+// para que un Postgres lento no tumbe despliegues).
+app.get("/healthz", (_req: Request, res: Response) => {
+  res.json({ ok: true });
+});
+
+// Listo para atender: base de datos y, si esta configurado, Redis.
+app.get("/readyz", async (_req: Request, res: Response) => {
+  const [bd, redis] = await Promise.all([
+    Promise.race([
+      prisma.$queryRaw`SELECT 1`.then(() => true),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2_000)),
+    ]).catch(() => false),
+    estadoRedis(),
+  ]);
+  const ok = bd && redis !== "desconectado";
+  res.status(ok ? 200 : 503).json({ ok, bd: bd ? "ok" : "error", redis });
+});
+
 /* -------------------------------- rutas ---------------------------------- */
+app.use(exigirVersionMinimaApp);
 app.use(authRequiredUnlessPublic);
 app.use((req, res, next) => {
   if (!req.user || ["GET", "HEAD", "OPTIONS"].includes(req.method) || isTaskClosingRequest(req)) {
@@ -588,6 +620,12 @@ const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
 
   const rawStatus = typeof err?.status === "number" ? err.status : undefined;
   const normalized = normalizeBusinessMessage(String(err?.message ?? ""));
+  // Codigo de negocio puesto por el servicio (p. ej. TAREA_YA_CERRADA,
+  // RENOVACION_EN_CURSO): la app lo usa para decidir sin leer el mensaje.
+  const codigoDelServicio =
+    typeof err?.code === "string" && /^[A-Z][A-Z0-9_]{2,60}$/.test(err.code)
+      ? err.code
+      : undefined;
 
   if (rawStatus != null) {
     if (rawStatus >= 500 && !isSafeBusinessMessage(normalized.message)) {
@@ -603,7 +641,7 @@ const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
       res,
       rawStatus,
       normalized.message || "No se pudo completar la solicitud.",
-      { code: normalized.code, details: normalized.details },
+      { code: normalized.code ?? codigoDelServicio, details: normalized.details },
     );
     return;
   }
@@ -639,6 +677,10 @@ const HOST = process.env.HOST || "0.0.0.0";
   }
 
   verificarFuenteMarcaAgua();
+
+  // Conecta a Redis desde el arranque (si esta configurado) para que el log
+  // diga de una vez si el caché quedó distribuido o en memoria.
+  getRedis();
 
   if (process.env.NODE_ENV === "production" && !String(process.env.REDIS_URL ?? "").trim()) {
     // Sin Redis cada replica tiene su propio cache: el logout de un token y los

@@ -79,19 +79,36 @@ export function motivoSesionInvalida(
   return null;
 }
 
-/* --------------------------- tokens de renovacion (web) -------------------------- */
+/* ---------------------------- tokens de renovacion ---------------------------- */
+
+/**
+ * `web`: cookie HttpOnly, ventanas cortas. `app`: la app Android guarda el
+ * token en almacenamiento seguro y lo usa al volver a tener senal, que puede
+ * ser dias despues (operarios sin internet en el conjunto).
+ */
+export type CanalSesion = "web" | "app";
+
+function canalDe(valor: unknown): CanalSesion {
+  return valor === "app" ? "app" : "web";
+}
 
 function limitar(valor: number, min: number, max: number, porDefecto: number): number {
   return Number.isFinite(valor) ? Math.min(Math.max(valor, min), max) : porDefecto;
 }
 
-/** Sin usar la sesion durante este tiempo, la cookie deja de servir. */
-function inactividadMs(): number {
+/** Sin usar la sesion durante este tiempo, el token de renovacion deja de servir. */
+export function inactividadMs(canal: CanalSesion = "web"): number {
+  if (canal === "app") {
+    return limitar(Number(process.env.SESION_APP_INACTIVIDAD_DIAS ?? 30), 1, 90, 30) * 86_400_000;
+  }
   return limitar(Number(process.env.SESION_WEB_INACTIVIDAD_HORAS ?? 24), 1, 168, 24) * 3_600_000;
 }
 
-/** Vida maxima de una sesion web, se use o no: luego hay que iniciar sesion. */
-function vidaMaximaMs(): number {
+/** Vida maxima de una sesion, se use o no: luego hay que iniciar sesion. */
+export function vidaMaximaMs(canal: CanalSesion = "web"): number {
+  if (canal === "app") {
+    return limitar(Number(process.env.SESION_APP_MAX_DIAS ?? 90), 1, 365, 90) * 86_400_000;
+  }
   return limitar(Number(process.env.SESION_WEB_MAX_DIAS ?? 7), 1, 30, 7) * 86_400_000;
 }
 
@@ -101,6 +118,14 @@ function vidaMaximaMs(): number {
  * tendra la cookie nueva).
  */
 const GRACIA_REUSO_MS = 30_000;
+
+/**
+ * App movil con senal mala: el servidor rota el token pero la respuesta no
+ * llega y la app vuelve a presentar el anterior. Si el sucesor nunca se uso,
+ * no es robo sino una respuesta perdida: se reemplaza el sucesor por uno nuevo
+ * en vez de cerrar la sesion (solo durante este tiempo y solo en la app).
+ */
+const RECUPERACION_RESPUESTA_PERDIDA_MS = 10 * 60_000;
 
 export function hashToken(tokenPlano: string): string {
   return createHash("sha256").update(tokenPlano).digest("hex");
@@ -119,11 +144,17 @@ export type SesionRefreshEmitida = { token: string; expiraEn: Date };
 
 export async function crearSesionRefresh(
   db: Db,
-  datos: { usuarioId: string; versionSesion: number; userAgent?: string | null },
+  datos: {
+    usuarioId: string;
+    versionSesion: number;
+    userAgent?: string | null;
+    canal?: CanalSesion;
+  },
 ): Promise<SesionRefreshEmitida> {
+  const canal = canalDe(datos.canal);
   const ahora = Date.now();
-  const familiaExpiraEn = new Date(ahora + vidaMaximaMs());
-  const expiraEn = new Date(Math.min(ahora + inactividadMs(), familiaExpiraEn.getTime()));
+  const familiaExpiraEn = new Date(ahora + vidaMaximaMs(canal));
+  const expiraEn = new Date(Math.min(ahora + inactividadMs(canal), familiaExpiraEn.getTime()));
   const token = generarToken();
 
   // Limpieza oportunista: las familias vencidas de este usuario ya no sirven.
@@ -139,6 +170,7 @@ export async function crearSesionRefresh(
       expiraEn,
       familiaExpiraEn,
       userAgent: recortarUserAgent(datos.userAgent),
+      canal,
     },
   });
   return { token, expiraEn };
@@ -162,6 +194,7 @@ export async function rotarSesionRefresh(
   db: PrismaClient,
   tokenPlano: string,
   userAgent?: string | null,
+  canalEsperado?: CanalSesion,
 ): Promise<{ usuarioId: string } & SesionRefreshEmitida> {
   const fila = await db.sesionRefresh.findUnique({
     where: { tokenHash: hashToken(tokenPlano) },
@@ -169,10 +202,22 @@ export async function rotarSesionRefresh(
   });
   if (!fila || fila.revocadoEn) throw httpError(401, SESION_NO_VALIDA, "SESION_INVALIDA");
 
+  // Un token de la web no sirve en la ruta de la app ni al reves: cada canal
+  // tiene sus ventanas y su forma de transporte (cookie vs. cuerpo).
+  const canal = canalDe((fila as { canal?: unknown }).canal);
+  if (canalEsperado && canal !== canalEsperado) {
+    throw httpError(401, SESION_NO_VALIDA, "SESION_INVALIDA");
+  }
+
   const ahora = Date.now();
   if (fila.usadoEn) {
-    if (ahora - fila.usadoEn.getTime() <= GRACIA_REUSO_MS) {
+    const desdeUso = ahora - fila.usadoEn.getTime();
+    if (desdeUso <= GRACIA_REUSO_MS) {
       throw httpError(409, "La sesión se está renovando. Intenta de nuevo.", "RENOVACION_EN_CURSO");
+    }
+    if (canal === "app" && desdeUso <= RECUPERACION_RESPUESTA_PERDIDA_MS) {
+      const recuperado = await recuperarRespuestaPerdida(db, fila, ahora, userAgent);
+      if (recuperado) return recuperado;
     }
     await revocarFamilia(db, fila.familiaId, "REUSO_DETECTADO");
     throw httpError(401, SESION_NO_VALIDA, "SESION_INVALIDA");
@@ -186,7 +231,7 @@ export async function rotarSesionRefresh(
   }
 
   const token = generarToken();
-  const expiraEn = new Date(Math.min(ahora + inactividadMs(), fila.familiaExpiraEn.getTime()));
+  const expiraEn = new Date(Math.min(ahora + inactividadMs(canal), fila.familiaExpiraEn.getTime()));
   await db.$transaction(async (tx) => {
     // Condicional: si otra peticion lo uso entre la lectura y aqui, gana ella.
     const marcado = await tx.sesionRefresh.updateMany({
@@ -205,6 +250,7 @@ export async function rotarSesionRefresh(
         expiraEn,
         familiaExpiraEn: fila.familiaExpiraEn,
         userAgent: recortarUserAgent(userAgent),
+        canal,
       },
     });
   });
@@ -212,7 +258,68 @@ export async function rotarSesionRefresh(
   return { usuarioId: fila.usuarioId, token, expiraEn };
 }
 
-/** Cierra la sesion web asociada a una cookie (logout). Silencioso si no existe. */
+/**
+ * Ver RECUPERACION_RESPUESTA_PERDIDA_MS. Devuelve null si el sucesor ya se uso
+ * (entonces si es un reuso y la familia se revoca).
+ */
+async function recuperarRespuestaPerdida(
+  db: PrismaClient,
+  fila: {
+    familiaId: string;
+    usuarioId: string;
+    versionSesion: number;
+    familiaExpiraEn: Date;
+    usadoEn: Date | null;
+    usuario: { activo: boolean; versionSesion: number };
+  },
+  ahora: number,
+  userAgent?: string | null,
+): Promise<({ usuarioId: string } & SesionRefreshEmitida) | null> {
+  if (!fila.usadoEn) return null;
+  if (fila.familiaExpiraEn.getTime() <= ahora) return null;
+  if (!fila.usuario.activo || fila.versionSesion !== fila.usuario.versionSesion) return null;
+
+  const sucesor = await db.sesionRefresh.findFirst({
+    where: {
+      familiaId: fila.familiaId,
+      usadoEn: null,
+      revocadoEn: null,
+      creadoEn: { gte: fila.usadoEn },
+    },
+    orderBy: { creadoEn: "desc" },
+    select: { id: true },
+  });
+  if (!sucesor) return null;
+
+  const token = generarToken();
+  const expiraEn = new Date(Math.min(ahora + inactividadMs("app"), fila.familiaExpiraEn.getTime()));
+  const reemplazado = await db.$transaction(async (tx) => {
+    const anulado = await tx.sesionRefresh.updateMany({
+      where: { id: sucesor.id, usadoEn: null, revocadoEn: null },
+      data: { revocadoEn: new Date(ahora), motivoRevocacion: "RESPUESTA_PERDIDA" },
+    });
+    if (anulado.count !== 1) return false;
+    await tx.sesionRefresh.create({
+      data: {
+        familiaId: fila.familiaId,
+        usuarioId: fila.usuarioId,
+        tokenHash: hashToken(token),
+        versionSesion: fila.versionSesion,
+        expiraEn,
+        familiaExpiraEn: fila.familiaExpiraEn,
+        userAgent: recortarUserAgent(userAgent),
+        canal: "app",
+      },
+    });
+    return true;
+  });
+  if (!reemplazado) {
+    throw httpError(409, "La sesión se está renovando. Intenta de nuevo.", "RENOVACION_EN_CURSO");
+  }
+  return { usuarioId: fila.usuarioId, token, expiraEn };
+}
+
+/** Cierra la sesion asociada a un token de renovacion (logout). Silencioso si no existe. */
 export async function revocarSesionRefreshPorToken(
   db: Db,
   tokenPlano: string,
