@@ -1,0 +1,287 @@
+# Compila la web y el APK de Android en la misma versión y los deja listos para
+# subir a Hostinger (ver docs/app-android-sin-conexion.md, "Publicar una
+# versión"). Se corre a mano: Actions → "App Android y web" → Run workflow.
+#
+# Secretos (Settings → Secrets and variables → Actions):
+#   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS,
+#   ANDROID_KEY_PASSWORD: llave de firma (obligatorios).
+#   HOSTINGER_FTP_SERVER, HOSTINGER_FTP_USER, HOSTINGER_FTP_PASSWORD,
+#   HOSTINGER_FTP_DIR: opcionales; con los cuatro, sube build/web solo.
+# Variables opcionales: HOSTINGER_FTP_PROTOCOL (ftps por defecto; ftp si
+# Hostinger no acepta TLS) y HOSTINGER_FTP_SECURITY (strict por defecto; loose
+# si el certificado del FTP no coincide con el nombre del servidor).
+
+name: App Android y web
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: API que usan la web y la app (API_BASE_URL)
+        type: string
+        default: https://thriving-empathy-production-2f17.up.railway.app
+      descargas_base_url:
+        description: Dónde queda publicada la web (para la URL del APK en android.json)
+        type: string
+        default: https://controlapp.controlsas.com.co
+      minima_version_code:
+        description: versionCode mínimo permitido (vacío = 1). Mayor obliga a actualizar a quien tenga una versión anterior
+        type: string
+        required: false
+        default: ""
+      notas:
+        description: Qué cambió (se muestra al ofrecer la actualización)
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-android
+  cancel-in-progress: false
+
+jobs:
+  compilar:
+    name: Compilar web y APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+        working-directory: controlapp_frontend
+    env:
+      API_BASE_URL: ${{ inputs.api_base_url }}
+      DESCARGAS_BASE_URL: ${{ inputs.descargas_base_url }}
+      MINIMA_VERSION_CODE: ${{ inputs.minima_version_code }}
+      NOTAS: ${{ inputs.notas }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Revisar entradas
+        run: |
+          set -euo pipefail
+          for nombre in API_BASE_URL DESCARGAS_BASE_URL; do
+            valor="${!nombre:-}"
+            if [[ ! "$valor" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?(/[^?#[:space:]]*)?$ ]]; then
+              echo "::error::$nombre debe ser una URL https sin ? ni #, llegó \"$valor\"."
+              exit 1
+            fi
+          done
+          if [[ -n "$MINIMA_VERSION_CODE" && ! "$MINIMA_VERSION_CODE" =~ ^[0-9]+$ ]]; then
+            echo "::error::minima_version_code debe ser un número entero o quedar vacío."
+            exit 1
+          fi
+
+      - name: Revisar secretos de firma
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          faltan=()
+          for nombre in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            [[ -n "${!nombre:-}" ]] || faltan+=("$nombre")
+          done
+          if (( ${#faltan[@]} )); then
+            echo "::error::Faltan los secretos ${faltan[*]} (Settings → Secrets and variables → Actions). Sin la llave no se puede firmar el APK."
+            exit 1
+          fi
+          # key.properties es un archivo de propiedades de Java: "\" y saltos
+          # de línea cambiarían el valor.
+          for nombre in ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [[ "${!nombre:-}" == *\\* || "${!nombre:-}" == *$'\n'* ]]; then
+              echo "::error::El secreto $nombre no puede tener \\ ni saltos de línea."
+              exit 1
+            fi
+          done
+
+      - name: Revisar FTP de Hostinger
+        id: ftp
+        env:
+          HOSTINGER_FTP_SERVER: ${{ secrets.HOSTINGER_FTP_SERVER }}
+          HOSTINGER_FTP_USER: ${{ secrets.HOSTINGER_FTP_USER }}
+          HOSTINGER_FTP_PASSWORD: ${{ secrets.HOSTINGER_FTP_PASSWORD }}
+          HOSTINGER_FTP_DIR: ${{ secrets.HOSTINGER_FTP_DIR }}
+        run: |
+          set -euo pipefail
+          hay=(); faltan=()
+          for nombre in HOSTINGER_FTP_SERVER HOSTINGER_FTP_USER HOSTINGER_FTP_PASSWORD HOSTINGER_FTP_DIR; do
+            if [[ -n "${!nombre:-}" ]]; then hay+=("$nombre"); else faltan+=("$nombre"); fi
+          done
+          if (( ${#faltan[@]} == 0 )); then
+            if [[ "$HOSTINGER_FTP_DIR" != */ ]]; then
+              echo "::error::HOSTINGER_FTP_DIR debe terminar en / (por ejemplo public_html/)."
+              exit 1
+            fi
+            echo "configurado=true" >> "$GITHUB_OUTPUT"
+            echo "Se subirá build/web a Hostinger por FTP al final."
+          else
+            echo "configurado=false" >> "$GITHUB_OUTPUT"
+            if (( ${#hay[@]} )); then
+              echo "::warning::Faltan ${faltan[*]}: no se subirá a Hostinger (hay que subir el artefacto a mano)."
+            else
+              echo "Sin secretos de FTP: el artefacto se sube a mano a Hostinger."
+            fi
+          fi
+
+      # Falla en un minuto, no después de compilar, si se olvidó subir el
+      # versionCode de pubspec.yaml.
+      - name: Revisar versión contra la publicada
+        run: >-
+          node scripts/empaquetar-android.js --solo-revisar
+          --base-url "$DESCARGAS_BASE_URL"
+          --minima "$MINIMA_VERSION_CODE"
+          --anterior "${DESCARGAS_BASE_URL%/}/descargas/android.json"
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+          cache-dependency-path: |
+            controlapp_frontend/android/*.gradle*
+            controlapp_frontend/android/app/*.gradle*
+            controlapp_frontend/android/gradle/wrapper/gradle-wrapper.properties
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          flutter-version: 3.47.2
+          cache: true
+
+      - name: flutter pub get
+        run: flutter pub get
+
+      - name: flutter analyze
+        run: flutter analyze
+
+      - name: flutter test
+        run: flutter test
+
+      - name: Prueba de empaquetar-android.js
+        run: node scripts/empaquetar-android.test.js
+
+      - name: Compilar web
+        run: flutter build web --release --dart-define=API_BASE_URL="$API_BASE_URL"
+
+      - name: Content-Security-Policy
+        run: |
+          set -euo pipefail
+          node scripts/csp-web.js --api "$API_BASE_URL"
+          if ! git diff --quiet -- web/.htaccess; then
+            echo "::warning file=controlapp_frontend/web/.htaccess::El hash del arranque cambió: build/web ya va bien, pero corre node scripts/csp-web.js localmente y haz commit de web/.htaccess."
+          fi
+
+      - name: Preparar llave de firma
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 --decode > android/app/upload-keystore.p12
+          if [[ ! -s android/app/upload-keystore.p12 ]]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 no es un base64 válido de la llave."
+            exit 1
+          fi
+          {
+            echo "storeFile=upload-keystore.p12"
+            echo "storePassword=$ANDROID_KEYSTORE_PASSWORD"
+            echo "keyAlias=$ANDROID_KEY_ALIAS"
+            echo "keyPassword=$ANDROID_KEY_PASSWORD"
+            echo "storeType=pkcs12"
+          } > android/key.properties
+          # Que abra con la contraseña y tenga el alias, antes de compilar.
+          if ! keytool -list -keystore android/app/upload-keystore.p12 -storetype PKCS12 \
+              -storepass:env ANDROID_KEYSTORE_PASSWORD -alias "$ANDROID_KEY_ALIAS" > /dev/null; then
+            echo "::error::La llave no abre con ANDROID_KEYSTORE_PASSWORD o no tiene el alias ANDROID_KEY_ALIAS."
+            exit 1
+          fi
+
+      - name: Compilar APK
+        run: flutter build apk --release --dart-define=API_BASE_URL="$API_BASE_URL"
+
+      # Si Gradle no tomó key.properties firmaría con la llave de depuración, y
+      # los celulares que la instalen no podrían actualizarse después.
+      - name: Revisar la firma del APK
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n 1)apksigner"
+          apk=build/app/outputs/flutter-apk/app-release.apk
+          esperado="$(keytool -exportcert -keystore android/app/upload-keystore.p12 -storetype PKCS12 \
+            -storepass:env ANDROID_KEYSTORE_PASSWORD -alias "$ANDROID_KEY_ALIAS" \
+            | sha256sum | cut -d' ' -f1)"
+          firmas="$("$apksigner" verify --print-certs "$apk")"
+          if ! grep -qi "certificate SHA-256 digest: $esperado" <<< "$firmas"; then
+            echo "::error::El APK no quedó firmado con la llave de ControlApp (¿android/app/build.gradle.kts lee key.properties?)."
+            echo "$firmas"
+            exit 1
+          fi
+          echo "APK firmado con la llave de ControlApp (certificado SHA-256 $esperado)."
+
+      - name: Empaquetar APK en build/web/descargas
+        id: empaquetar
+        run: >-
+          node scripts/empaquetar-android.js
+          --base-url "$DESCARGAS_BASE_URL"
+          --minima "$MINIMA_VERSION_CODE"
+          --notas "$NOTAS"
+          --anterior "${DESCARGAS_BASE_URL%/}/descargas/android.json"
+
+      - name: Subir artefacto
+        uses: actions/upload-artifact@v7
+        with:
+          name: controlapp-web-${{ steps.empaquetar.outputs.version_name }}+${{ steps.empaquetar.outputs.version_code }}
+          path: controlapp_frontend/build/web
+          # .htaccess (rutas, caché y CSP) empieza con punto: sin esto no se incluye.
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Subir a Hostinger por FTP
+        if: steps.ftp.outputs.configurado == 'true'
+        uses: SamKirkland/FTP-Deploy-Action@110f9186c050f71550953127052e77650219c287 # v4.4.0
+        with:
+          server: ${{ secrets.HOSTINGER_FTP_SERVER }}
+          username: ${{ secrets.HOSTINGER_FTP_USER }}
+          password: ${{ secrets.HOSTINGER_FTP_PASSWORD }}
+          server-dir: ${{ secrets.HOSTINGER_FTP_DIR }}
+          protocol: ${{ vars.HOSTINGER_FTP_PROTOCOL || 'ftps' }}
+          security: ${{ vars.HOSTINGER_FTP_SECURITY || 'strict' }}
+          local-dir: controlapp_frontend/build/web/
+
+      - name: Resumen
+        if: steps.empaquetar.outcome == 'success'
+        env:
+          SUBIDO: "${{ steps.ftp.outputs.configurado == 'true' && 'sí, por FTP' || 'no, descargar el artefacto y subirlo a mano' }}"
+        run: |
+          set -euo pipefail
+          node -e '
+            const a = require("./build/web/descargas/android.json");
+            const filas = [
+              ["Versión", `${a.versionName}+${a.versionCode}`],
+              ["Mínima", a.minimaVersionCode],
+              ["APK", a.url],
+              ["sha256", "`" + a.sha256 + "`"],
+              ["Tamaño", `${(a.tamanoBytes / 1048576).toFixed(1)} MB`],
+              ["API", process.env.API_BASE_URL],
+              ["Subido a Hostinger", process.env.SUBIDO],
+            ];
+            console.log(["## App Android y web", "", "| | |", "|---|---|", ...filas.map(([k, v]) => `| ${k} | ${v} |`)].join("\n"));
+          ' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Borrar llave de firma
+        if: always()
+        working-directory: .
+        run: rm -f controlapp_frontend/android/app/upload-keystore.p12 controlapp_frontend/android/key.properties

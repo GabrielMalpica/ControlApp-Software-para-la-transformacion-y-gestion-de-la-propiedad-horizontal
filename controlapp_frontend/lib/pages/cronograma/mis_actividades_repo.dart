@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_application_1/api/inventario_api.dart';
 import 'package:flutter_application_1/api/operario_api.dart';
 import 'package:flutter_application_1/model/cierre_tarea_pendiente_model.dart';
@@ -83,24 +85,44 @@ class MisActividadesRepo {
     DateTime? hasta,
     bool guardarCopia = true,
   }) async {
+    final store = CierreTareaOfflineStore.instance;
+    final clave = _claveCache(s.usuarioId);
+    LecturaCacheada? copia;
     try {
-      final lista = await _api.listarTareasOperario(
+      copia = await store.obtenerLecturaCacheada(clave);
+    } catch (_) {
+      copia = null;
+    }
+    try {
+      // Con la copia guardada se manda su ETag: si la agenda no cambió, el
+      // servidor responde 304 sin mandar nada (rápido con datos móviles).
+      final r = await _api.listarTareasOperarioCondicional(
         operarioId: s.operarioId,
         desde: desde,
         hasta: hasta,
+        etag: guardarCopia ? copia?.etag : null,
       );
-      final normalizada = _conOperarioActual(lista, s);
+      if (r.noModificado && copia != null) {
+        unawaited(store.marcarLecturaVigente(clave));
+        return ActividadesCargadas(
+          copia.datos.map(TareaModel.fromJson).toList(),
+          null,
+        );
+      }
+      final normalizada = _conOperarioActual(r.datos ?? const [], s);
       if (guardarCopia) {
         // Sin await: guardar la copia no debe demorar la pantalla.
-        CierreTareaOfflineStore.instance.cachearLectura(
-          _claveCache(s.usuarioId),
-          normalizada.map((t) => t.toJson()).toList(),
+        unawaited(
+          store.cachearLectura(
+            clave,
+            normalizada.map((t) => t.toJson()).toList(),
+            etag: r.etag,
+          ),
         );
       }
       return ActividadesCargadas(normalizada, null);
     } catch (e) {
-      final copia = await CierreTareaOfflineStore.instance
-          .obtenerLecturaCacheada(_claveCache(s.usuarioId));
+      // Un 401/403/426 no es "sin señal": la sesión o la app se encargan.
       if (copia == null) rethrow;
       return ActividadesCargadas(
         copia.datos.map(TareaModel.fromJson).toList(),
@@ -131,18 +153,33 @@ class MisActividadesRepo {
   /// Inventario del conjunto para registrar insumos; sin señal usa la última
   /// copia (el servidor revalida el stock al sincronizar).
   Future<List<InventarioItemResponse>> inventario(String conjuntoNit) async {
+    final store = CierreTareaOfflineStore.instance;
+    final clave = CierreTareaOfflineStore.claveInventarioConjunto(conjuntoNit);
+    LecturaCacheada? copia;
     try {
-      final inv = await _inventarioApi.listarInventarioConjunto(conjuntoNit);
-      CierreTareaOfflineStore.instance.cachearLectura(
-        CierreTareaOfflineStore.claveInventarioConjunto(conjuntoNit),
-        inv.map((i) => i.toJson()).toList(),
+      copia = await store.obtenerLecturaCacheada(clave);
+    } catch (_) {
+      copia = null;
+    }
+    try {
+      final r = await _inventarioApi.listarInventarioConjuntoCondicional(
+        conjuntoNit,
+        etag: copia?.etag,
+      );
+      if (r.noModificado && copia != null) {
+        unawaited(store.marcarLecturaVigente(clave));
+        return copia.datos.map(InventarioItemResponse.fromJson).toList();
+      }
+      final inv = r.datos ?? const <InventarioItemResponse>[];
+      unawaited(
+        store.cachearLectura(
+          clave,
+          inv.map((i) => i.toJson()).toList(),
+          etag: r.etag,
+        ),
       );
       return inv;
     } catch (_) {
-      final copia = await CierreTareaOfflineStore.instance
-          .obtenerLecturaCacheada(
-            CierreTareaOfflineStore.claveInventarioConjunto(conjuntoNit),
-          );
       if (copia == null) return const [];
       return copia.datos.map(InventarioItemResponse.fromJson).toList();
     }

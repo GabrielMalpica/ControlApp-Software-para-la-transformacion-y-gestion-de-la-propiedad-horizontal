@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Carpeta interna donde ota_update deja la APK descargada antes de abrir el
+     instalador (lib/service/actualizacion_app_service.dart). -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <files-path name="internal_apk_storage" path="ota_update/"/>
+</paths>

@@ -2312,8 +2312,9 @@ class _InsumoPersonalizadoDialogState
                           ),
                           validator: (v) {
                             final parsed = num.tryParse((v ?? '').trim());
-                            if (parsed == null)
+                            if (parsed == null) {
                               return 'Ingresa un número válido';
+                            }
                             if (parsed < 0) return 'No puede ser negativo';
                             return null;
                           },

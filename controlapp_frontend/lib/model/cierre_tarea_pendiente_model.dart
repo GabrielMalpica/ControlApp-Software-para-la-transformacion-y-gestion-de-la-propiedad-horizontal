@@ -60,7 +60,15 @@ class CierreTareaPendiente {
   final String? observaciones;
   final List<Map<String, num>> insumosUsados;
   final DateTime fechaCierreLocal;
+
+  /// Hora del cierre según el reloj monotónico (`RelojConfiable`), null si no
+  /// se pudo estimar. Viaja como `horaEstimada`.
+  final DateTime? fechaCierreEstimada;
   final List<EvidenciaPendiente> evidencias;
+
+  /// Descripción de la actividad al cerrarla (para mostrar el rechazo sin
+  /// depender de la agenda guardada).
+  final String? descripcionTarea;
 
   final CierreSyncEstado estadoSync;
   final int intentos;
@@ -80,6 +88,8 @@ class CierreTareaPendiente {
     required this.evidencias,
     required this.creadoEn,
     this.observaciones,
+    this.fechaCierreEstimada,
+    this.descripcionTarea,
     this.estadoSync = CierreSyncEstado.pendiente,
     this.intentos = 0,
     this.ultimoError,
@@ -104,6 +114,8 @@ class CierreTareaPendiente {
       observaciones: observaciones,
       insumosUsados: insumosUsados,
       fechaCierreLocal: fechaCierreLocal,
+      fechaCierreEstimada: fechaCierreEstimada,
+      descripcionTarea: descripcionTarea,
       evidencias: evidencias,
       creadoEn: creadoEn,
       estadoSync: estadoSync ?? this.estadoSync,
@@ -125,6 +137,9 @@ class CierreTareaPendiente {
         .map((e) => e.map((k, v) => MapEntry(k, v)))
         .toList(),
     'fechaCierreLocal': fechaCierreLocal.toIso8601String(),
+    if (fechaCierreEstimada != null)
+      'fechaCierreEstimada': fechaCierreEstimada!.toUtc().toIso8601String(),
+    if (descripcionTarea != null) 'descripcionTarea': descripcionTarea,
     'evidencias': evidencias.map((e) => e.toJson()).toList(),
     'estadoSync': estadoSync.name,
     'intentos': intentos,
@@ -148,6 +163,10 @@ class CierreTareaPendiente {
           )
           .toList(),
       fechaCierreLocal: DateTime.parse(json['fechaCierreLocal']),
+      fechaCierreEstimada: DateTime.tryParse(
+        json['fechaCierreEstimada']?.toString() ?? '',
+      ),
+      descripcionTarea: json['descripcionTarea'] as String?,
       evidencias: ((json['evidencias'] as List?) ?? const [])
           .map(
             (e) =>

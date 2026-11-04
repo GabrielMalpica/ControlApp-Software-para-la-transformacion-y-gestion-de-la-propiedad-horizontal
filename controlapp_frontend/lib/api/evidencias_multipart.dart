@@ -1,15 +1,18 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
 import 'package:flutter_application_1/model/evidencia_adjunto_model.dart';
 import 'package:flutter_application_1/service/upload_media_type.dart';
 
-/// Agrega las evidencias de cierre al multipart (`files`; web: bytes, móvil y
-/// escritorio: ruta) y, alineado con ellas, el campo `evidenciasCaptura` con
-/// la hora y el GPS de las fotos tomadas con la cámara de la app, que el
-/// backend estampa como marca de agua.
+/// Lo máximo que acepta el servidor por cierre (y lo que deja agregar la
+/// pantalla de cierre).
+const int maxEvidenciasCierre = 10;
+
+/// Agrega las evidencias de cierre al multipart (`files`; por ruta si el
+/// archivo existe, si no por sus bytes) y, alineado con ellas, el campo
+/// `evidenciasCaptura` con la hora y el GPS de las fotos tomadas con la
+/// cámara de la app, que el backend estampa como marca de agua.
 Future<void> adjuntarEvidencias(
   http.MultipartRequest req,
   List<EvidenciaAdjunto> evidencias,
@@ -40,7 +43,9 @@ Future<void> adjuntarEvidencias(
       }
     }
 
-    if (kIsWeb && bytes != null && bytes.isNotEmpty) {
+    // Web siempre trae bytes; en la app también llegan así las fotos ya
+    // recomprimidas o pegadas (antes se descartaban en silencio).
+    if (bytes != null && bytes.isNotEmpty) {
       req.files.add(
         http.MultipartFile.fromBytes(
           'files',

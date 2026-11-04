@@ -11,7 +11,6 @@ import 'package:flutter_application_1/api/festivo_api.dart';
 import 'package:intl/intl.dart';
 
 import 'package:flutter_application_1/api/conjunto_api.dart';
-import 'package:flutter_application_1/api/inventario_api.dart';
 import 'package:flutter_application_1/model/cronograma_informe_jerarquico_model.dart';
 import 'package:flutter_application_1/model/cronograma_actividad_informe_model.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
@@ -55,6 +54,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_application_1/pages/cronograma/cerrar_actividad_page.dart';
 import 'package:flutter_application_1/pages/cronograma/cronograma_hoy_view.dart';
 import 'package:flutter_application_1/pages/cronograma/grilla_horas_view.dart';
+import 'package:flutter_application_1/pages/cronograma/mis_actividades_repo.dart';
 import 'package:flutter_application_1/pages/cronograma/mes_resumen_view.dart';
 import 'package:flutter_application_1/pages/cronograma/semana_trabajador_view.dart';
 import 'package:flutter_application_1/utils/cronograma/agrupar_actividades.dart';
@@ -215,7 +215,6 @@ class _CronogramaClaroPageState extends State<CronogramaClaroPage> {
   final ScrollController _mensualVCtrl = ScrollController();
 
   // ✅ para cerrar desde cronograma
-  final _inventarioApi = InventarioApi();
   final _session = SessionService();
   final _tareaCierreService = TareaCierreService();
 
@@ -1663,12 +1662,13 @@ class _CronogramaClaroPageState extends State<CronogramaClaroPage> {
       return;
     }
 
-    List<InventarioItemResponse> inventario = [];
-    try {
-      inventario = await _inventarioApi.listarInventarioConjunto(widget.nit);
-    } catch (_) {
-      // Sin inventario se puede cerrar igual, sin registrar insumos.
-    }
+    // Con señal lo trae (y lo guarda); sin señal usa la última copia. Sin
+    // ninguna se puede cerrar igual, sin registrar insumos.
+    final nit = (t.conjuntoId ?? '').trim().isNotEmpty
+        ? t.conjuntoId!.trim()
+        : widget.nit;
+    final List<InventarioItemResponse> inventario = await MisActividadesRepo()
+        .inventario(nit);
 
     if (!mounted) return;
     final res = await Navigator.of(context).push<CerrarTareaResult>(

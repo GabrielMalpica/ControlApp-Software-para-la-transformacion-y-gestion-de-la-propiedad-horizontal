@@ -4,6 +4,7 @@ import 'package:flutter_application_1/service/app_router.dart';
 import 'package:flutter_application_1/service/notificaciones_center.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 import 'package:flutter_application_1/service/theme.dart';
+import 'package:flutter_application_1/widgets/aviso_actualizacion_app.dart';
 import 'package:flutter_application_1/widgets/aviso_version_nueva.dart';
 
 class MyApp extends StatefulWidget {
@@ -49,7 +50,9 @@ class _MyAppState extends State<MyApp> {
     MyApp.scaffoldMessengerKey.currentState?.showSnackBar(
       const SnackBar(
         behavior: SnackBarBehavior.floating,
-        content: Text('Tu sesión expiró. Inicia sesión de nuevo.'),
+        content: Text(
+          'Tu sesión expiró. Inicia sesión de nuevo; lo que guardaste sin señal se conserva.',
+        ),
       ),
     );
   }
@@ -95,8 +98,9 @@ class _MyAppState extends State<MyApp> {
       navigatorKey: MyApp.navigatorKey,
       initialRoute: AppRouter.splash,
       routes: AppRouter.routes,
-      builder: (context, child) =>
-          AvisoVersionNueva(child: child ?? const SizedBox.shrink()),
+      builder: (context, child) => AvisoActualizacionApp(
+        child: AvisoVersionNueva(child: child ?? const SizedBox.shrink()),
+      ),
     );
   }
 }

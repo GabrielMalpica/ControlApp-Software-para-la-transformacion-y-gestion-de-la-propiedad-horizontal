@@ -1,6 +1,7 @@
 import 'package:image_picker/image_picker.dart';
 
 import 'package:flutter_application_1/model/evidencia_adjunto_model.dart';
+import 'package:flutter_application_1/service/reloj_confiable.dart';
 
 import 'selected_upload_file.dart';
 
@@ -16,6 +17,8 @@ class CameraCapture {
     );
     if (x == null) return null;
 
+    final tomadaEn = DateTime.now();
+    final estimada = await RelojConfiable.instance.estimarAhora();
     final name = x.name.trim().isEmpty ? 'foto.jpg' : x.name.trim();
     final path = x.path.trim();
     if (path.isEmpty) return null;
@@ -24,8 +27,10 @@ class CameraCapture {
       name: name,
       mimeType: 'image/jpeg',
       path: path,
-      // La fuente es siempre la cámara: la foto se acaba de tomar.
-      captura: CapturaEvidencia(tomadaEn: DateTime.now()),
+      // La fuente es siempre la cámara: la foto se acaba de tomar. Sin señal
+      // la hora estimada (reloj monotónico) permite al servidor corregir un
+      // celular con la hora mal puesta.
+      captura: CapturaEvidencia(tomadaEn: tomadaEn, tomadaEnEstimada: estimada),
     );
   }
 }

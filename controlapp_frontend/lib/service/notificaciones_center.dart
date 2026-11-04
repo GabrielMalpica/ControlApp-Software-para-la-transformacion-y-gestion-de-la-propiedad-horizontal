@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_application_1/api/notificacion_api.dart';
 import 'package:flutter_application_1/model/notificacion_model.dart';
+import 'package:flutter_application_1/service/offline/connectivity_service.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 
 class NotificacionesCenter with WidgetsBindingObserver {
@@ -90,6 +92,9 @@ class NotificacionesCenter with WidgetsBindingObserver {
 
   Future<void> refresh() async {
     if (_cargando) return;
+    // Sin señal (app nativa) no se intenta: no hay nada que mostrar y cada
+    // intento gastaría batería esperando el tiempo límite.
+    if (!kIsWeb && !ConnectivityService.instance.enLinea.value) return;
 
     final token = (await _session.getToken())?.trim();
     if (token == null || token.isEmpty) {

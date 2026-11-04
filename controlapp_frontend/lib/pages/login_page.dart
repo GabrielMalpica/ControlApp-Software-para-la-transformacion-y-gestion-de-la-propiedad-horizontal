@@ -7,6 +7,7 @@ import 'package:flutter_application_1/service/app_router.dart';
 import 'package:flutter_application_1/service/notificaciones_center.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/widgets/animated_fade_slide.dart';
+import 'package:flutter_application_1/widgets/aviso_descarga_app.dart';
 import 'package:flutter_application_1/widgets/password_dialogs.dart';
 import 'package:flutter_application_1/widgets/version_web_texto.dart';
 
@@ -263,6 +264,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
                 const VersionWebTexto(),
+                const AvisoDescargaApp(),
               ],
             ),
           ),

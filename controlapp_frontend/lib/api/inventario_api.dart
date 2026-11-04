@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'package:flutter_application_1/api/operario_api.dart'
+    show ApiError, LecturaCondicional;
 import 'package:flutter_application_1/service/api_client.dart';
 import 'package:flutter_application_1/model/inventario_item_model.dart';
 import 'package:flutter_application_1/model/insumo_model.dart';
@@ -21,6 +23,35 @@ class InventarioApi {
     return data
         .map((e) => InventarioItemResponse.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  /// Igual que [listarInventarioConjunto] con `If-None-Match`: 304 = la
+  /// copia guardada con ese [etag] sigue vigente.
+  Future<LecturaCondicional<List<InventarioItemResponse>>>
+  listarInventarioConjuntoCondicional(
+    String conjuntoNit, {
+    String? etag,
+  }) async {
+    final resp = await _client.get(
+      '/inventario/conjunto/$conjuntoNit/insumos',
+      headers: {if (etag != null && etag.isNotEmpty) 'If-None-Match': etag},
+      timeout: const Duration(seconds: 20),
+    );
+    if (resp.statusCode == 304) {
+      return LecturaCondicional(etag: etag, noModificado: true);
+    }
+    if (resp.statusCode != 200) {
+      throw ApiError(resp.statusCode, resp.body);
+    }
+    final List<dynamic> data = jsonDecode(resp.body) as List<dynamic>;
+    return LecturaCondicional(
+      datos: data
+          .map(
+            (e) => InventarioItemResponse.fromJson(e as Map<String, dynamic>),
+          )
+          .toList(),
+      etag: resp.headers['etag'],
+    );
   }
 
   Future<List<InventarioItemResponse>> listarInsumosBajos(
@@ -100,8 +131,7 @@ class InventarioApi {
     final List<dynamic> data = jsonDecode(resp.body) as List<dynamic>;
     return data
         .map(
-          (e) =>
-              MovimientoInsumoResponse.fromJson(e as Map<String, dynamic>),
+          (e) => MovimientoInsumoResponse.fromJson(e as Map<String, dynamic>),
         )
         .toList();
   }

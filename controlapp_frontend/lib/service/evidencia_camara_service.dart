@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show ValueNotifier, kIsWeb;
 import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
 
 import 'package:flutter_application_1/api/evidencia_api.dart';
 import 'package:flutter_application_1/model/evidencia_adjunto_model.dart';
@@ -89,7 +91,9 @@ class EvidenciaCamara {
     final ahora = DateTime.now();
     final conHora = [
       for (final a in archivos)
-        a.captura != null ? a : a.conCaptura(capturaDesdeExif(a.bytes)),
+        a.captura != null
+            ? a
+            : a.conCaptura(capturaDesdeExif(await _bytesParaExif(a))),
     ];
     bool sinGpsYReciente(CapturaEvidencia? c) =>
         c != null && !c.tieneGps && esRecienTomada(c.tomadaEn, ahora);
@@ -110,6 +114,19 @@ class EvidenciaCamara {
               )
             : f,
     ];
+  }
+
+  /// En web la foto llega con sus bytes; en la app nativa solo con la ruta
+  /// del archivo, y el EXIF (hora de toma) se lee de ahí.
+  static Future<Uint8List?> _bytesParaExif(SelectedUploadFile a) async {
+    if (a.hasBytes) return a.bytes;
+    final path = a.path?.trim() ?? '';
+    if (kIsWeb || path.isEmpty) return null;
+    try {
+      return await XFile(path).readAsBytes();
+    } catch (_) {
+      return null;
+    }
   }
 
   static bool esRecienTomada(DateTime tomadaEn, DateTime ahora) {

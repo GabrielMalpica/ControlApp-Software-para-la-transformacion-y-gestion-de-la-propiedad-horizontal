@@ -1,8 +1,10 @@
 name: flutter_application_1
-description: "A new Flutter project."
+description: "ControlApp: app de Control Limpieza S.A.S. (web y Android)."
 publish_to: 'none'
 
-version: 1.0.0+1
+# versionName+versionCode. Subir el +N en cada APK que se publique en
+# /descargas/: la app compara versionCode con android.json para actualizarse.
+version: 1.1.0+2
 
 environment:
   sdk: ^3.9.2
@@ -37,11 +39,28 @@ dependencies:
   connectivity_plus: ^7.3.1
   image: ^4.9.2
   sembast_web: ^2.4.6
+  workmanager: ^0.10.10
+  package_info_plus: ^9.0.1
+  ota_update: ^7.1.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.4
+
+# Íconos del lanzador de Android desde los de la web. Regenerar con
+# `dart run flutter_launcher_icons` (desde controlapp_frontend/).
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: false
+  image_path: "web/icons/control-512.png"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "web/icons/control-maskable-512.png"
+  # El ícono "maskable" ya trae su margen: sin inset extra el logo no queda
+  # diminuto dentro del círculo/cuadrado del lanzador.
+  adaptive_icon_foreground_inset: 0
+  min_sdk_android: 23
 
 flutter:
   uses-material-design: true

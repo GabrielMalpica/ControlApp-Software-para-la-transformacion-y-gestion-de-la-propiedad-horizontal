@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import '../model/asistencia_model.dart';
+import 'api_error.dart';
 import '../service/api_client.dart';
 import '../service/app_constants.dart';
 
@@ -50,6 +51,15 @@ class AsistenciaApi {
     return AsistenciaQr.fromJson(data);
   }
 
+  /// Marca entrada o salida con el QR del conjunto. Lanza [ApiError] con el
+  /// código HTTP y el `code` del servidor (QR_INVALIDO, ASISTENCIA_COMPLETA…)
+  /// o la excepción de red tal cual (sin señal → se guarda en la cola).
+  ///
+  /// [clienteRegistroId] deduplica reintentos (el servidor responde lo mismo
+  /// con `duplicado: true`). [sinConexion]: el envío sale de la cola; entonces
+  /// viajan [registradaEn] (reloj del celular al escanear),
+  /// [registradaEnEstimada] y el reloj del celular al enviar, y el servidor
+  /// usa la hora del escaneo. En línea el servidor usa su propia hora.
   Future<AsistenciaCheckinResultado> checkin({
     required String conjuntoId,
     required String qrPayload,
@@ -57,18 +67,38 @@ class AsistenciaApi {
     required double latitud,
     required double longitud,
     double? precisionMetros,
+    String? clienteRegistroId,
+    bool sinConexion = false,
+    DateTime? registradaEn,
+    DateTime? registradaEnEstimada,
+    Duration timeout = const Duration(seconds: 20),
   }) async {
     final resp = await _client.post(
       '$_base/checkin',
+      timeout: timeout,
       body: {
         'conjuntoId': conjuntoId,
         'qrPayload': qrPayload,
         'latitud': latitud,
         'longitud': longitud,
         if (precisionMetros != null) 'precisionMetros': precisionMetros,
+        if (clienteRegistroId != null) 'clienteRegistroId': clienteRegistroId,
+        if (sinConexion) ...{
+          'sinConexion': true,
+          'horaDispositivoEnvio': DateTime.now().toUtc().toIso8601String(),
+          if (registradaEn != null)
+            'registradaEn': registradaEn.toUtc().toIso8601String(),
+          if (registradaEnEstimada != null)
+            'registradaEnEstimada': registradaEnEstimada
+                .toUtc()
+                .toIso8601String(),
+        },
       },
     );
-    final data = await _decode(resp) as Map<String, dynamic>;
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      throw ApiError(resp.statusCode, resp.body);
+    }
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
     return AsistenciaCheckinResultado.fromJson(data);
   }
 

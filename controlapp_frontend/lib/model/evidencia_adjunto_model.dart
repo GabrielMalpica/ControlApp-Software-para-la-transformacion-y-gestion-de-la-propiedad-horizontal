@@ -11,7 +11,17 @@ class CapturaEvidencia {
   final double? latitud;
   final double? longitud;
 
-  const CapturaEvidencia({required this.tomadaEn, this.latitud, this.longitud});
+  /// Hora de la toma según el reloj monotónico de la app nativa
+  /// (`RelojConfiable`): no cambia si alguien movió la hora del celular. Null
+  /// si no se pudo estimar (web, celular reiniciado, foto de galería).
+  final DateTime? tomadaEnEstimada;
+
+  const CapturaEvidencia({
+    required this.tomadaEn,
+    this.latitud,
+    this.longitud,
+    this.tomadaEnEstimada,
+  });
 
   bool get tieneGps => latitud != null && longitud != null;
 
@@ -19,6 +29,7 @@ class CapturaEvidencia {
     tomadaEn: tomadaEn,
     latitud: latitud,
     longitud: longitud,
+    tomadaEnEstimada: tomadaEnEstimada,
   );
 
   Map<String, dynamic> toJson() => {
@@ -26,6 +37,8 @@ class CapturaEvidencia {
     'tomadaEn': tomadaEn.toUtc().toIso8601String(),
     if (tieneGps) 'latitud': latitud,
     if (tieneGps) 'longitud': longitud,
+    if (tomadaEnEstimada != null)
+      'tomadaEnEstimada': tomadaEnEstimada!.toUtc().toIso8601String(),
   };
 
   static CapturaEvidencia? fromJson(Object? json) {
@@ -38,6 +51,9 @@ class CapturaEvidencia {
       tomadaEn: tomadaEn,
       latitud: lat is num ? lat.toDouble() : null,
       longitud: lng is num ? lng.toDouble() : null,
+      tomadaEnEstimada: DateTime.tryParse(
+        json['tomadaEnEstimada']?.toString() ?? '',
+      ),
     );
   }
 }

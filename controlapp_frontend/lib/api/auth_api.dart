@@ -4,7 +4,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_application_1/model/auth_models.dart';
 import 'package:flutter_application_1/model/profile_models.dart';
 import 'package:flutter_application_1/service/api_client.dart';
+import 'package:flutter_application_1/service/api_exception.dart';
 import 'package:flutter_application_1/service/app_error.dart';
+import 'package:flutter_application_1/service/offline/tarea_sync_engine.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 
 class AuthApi {
@@ -27,6 +29,9 @@ class AuthApi {
         'correo': correo.trim().toLowerCase(),
         'contrasena': contrasena,
         'sesionWeb': kIsWeb,
+        // App nativa: el servidor entrega además un token de renovación
+        // rotativo para seguir la sesión sin volver a pedir la contraseña.
+        'sesionApp': !kIsWeb,
       },
     );
 
@@ -50,6 +55,7 @@ class AuthApi {
     final result = LoginResponse.fromJson(data);
     if (result.token.isEmpty) return result;
 
+    final refresh = data['refreshToken']?.toString().trim() ?? '';
     await _session.saveSession(
       token: result.token,
       rol: result.user.rol,
@@ -60,15 +66,28 @@ class AuthApi {
       conjuntoId: result.user.conjuntoId,
       permissions: result.user.permissions,
       requiereCambioContrasena: result.user.requiereCambioContrasena,
+      refreshToken: refresh.isEmpty ? null : refresh,
+      refreshExpiraEn: DateTime.tryParse(
+        data['refreshExpiraEn']?.toString() ?? '',
+      ),
     );
+    // Si la cola sin señal estaba en pausa por la sesión, sigue enviando.
+    if (!kIsWeb) TareaSyncEngine.instance.notificarSesionRestaurada();
     return result;
   }
 
-  Future<AuthUser> me() async {
-    final resp = await _client.get('/auth/me');
+  /// Perfil actual según el servidor. Lanza [ApiException] con el código
+  /// HTTP (401 = sesión inválida aun después de renovar, 426 = app
+  /// desactualizada) o la excepción de red tal cual (sin señal).
+  Future<AuthUser> me({Duration timeout = ApiClient.tiempoLimite}) async {
+    final resp = await _client.get('/auth/me', timeout: timeout);
 
     if (resp.statusCode != 200) {
-      throw Exception(_serverMessage(resp.body, fallback: 'Sesión inválida.'));
+      throw ApiException.fromResponse(
+        statusCode: resp.statusCode,
+        body: resp.body,
+        fallback: 'Sesión inválida.',
+      );
     }
 
     final data = jsonDecode(resp.body) as Map<String, dynamic>;
@@ -109,6 +128,7 @@ class AuthApi {
         'contrasenaActual': contrasenaActual,
         'nuevaContrasena': nuevaContrasena,
         'sesionWeb': kIsWeb,
+        'sesionApp': !kIsWeb,
       },
     );
 
@@ -130,7 +150,11 @@ class AuthApi {
   }) async {
     final resp = await _client.postConCredenciales(
       '/auth/cambiar-contrasena-inicial',
-      body: {'nuevaContrasena': nuevaContrasena, 'sesionWeb': kIsWeb},
+      body: {
+        'nuevaContrasena': nuevaContrasena,
+        'sesionWeb': kIsWeb,
+        'sesionApp': !kIsWeb,
+      },
     );
 
     if (resp.statusCode != 200) {
@@ -167,11 +191,17 @@ class AuthApi {
     }
   }
 
-  /// Cierra la sesion en el servidor (revoca el token y la cookie web) y
-  /// luego en este dispositivo. Si el servidor no responde, igual se limpia.
+  /// Cierra la sesion en el servidor (revoca el token, la cookie web y, en la
+  /// app, el token de renovación) y luego en este dispositivo. Si el servidor
+  /// no responde, igual se limpia. No borra lo guardado sin señal.
   Future<void> logout() async {
     try {
-      await _client.postConCredenciales('/auth/logout');
+      final refresh = await _session.getRefreshToken();
+      await _client.postConCredenciales(
+        '/auth/logout',
+        body: refresh == null ? null : {'refreshToken': refresh},
+        timeout: const Duration(seconds: 10),
+      );
     } catch (_) {
       // Mejor esfuerzo: sin red el token vence solo.
     }

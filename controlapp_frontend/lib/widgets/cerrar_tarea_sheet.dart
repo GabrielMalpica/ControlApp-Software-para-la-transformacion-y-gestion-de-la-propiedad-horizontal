@@ -1,4 +1,3 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
@@ -6,7 +5,9 @@ import 'package:flutter/material.dart';
 import '../model/tarea_model.dart';
 import '../model/inventario_item_model.dart';
 import '../model/evidencia_adjunto_model.dart';
+import '../api/evidencias_multipart.dart' show maxEvidenciasCierre;
 import '../utils/pickers/clipboard_image_capture_bridge.dart';
+import '../utils/pickers/galeria_evidencias.dart';
 import '../utils/pickers/optimizar_imagen_bridge.dart';
 import '../service/evidencia_camara_service.dart';
 import 'ayuda_ubicacion.dart';
@@ -106,59 +107,33 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
   }
 
   Future<void> _pickEvidencias() async {
-    final picked = await FilePicker.platform.pickFiles(
-      allowMultiple: true,
-      withData: kIsWeb, // ✅ en web necesitamos bytes
-      type: FileType.custom,
-      allowedExtensions: const [
-        'jpg',
-        'jpeg',
-        'jfif',
-        'png',
-        'webp',
-        'gif',
-        'bmp',
-        'heic',
-        'heif',
-        'pdf',
-      ],
-    );
-
-    if (picked == null) return;
-
-    // Web: bytes, con las fotos reducidas a 1920 px para que el cierre suba
-    // rápido (los PDF pasan igual) y con la hora de toma de su EXIF.
-    if (kIsWeb) {
-      final optimizados = await EvidenciaCamara.prepararDeGaleria(
-        picked.files
-            .where((f) => f.bytes != null && f.bytes!.isNotEmpty)
-            .map(
-              (f) => SelectedUploadFile(
-                name: f.name.trim().isEmpty ? 'archivo' : f.name.trim(),
-                bytes: f.bytes,
-              ),
-            ),
-      );
-      if (!mounted) return;
-      _agregarEvidencias(_evidenciasDesdeSeleccion(optimizados));
+    final restantes = maxEvidenciasCierre - _evidencias.length;
+    if (restantes <= 0) {
+      _avisarMaximo();
       return;
     }
+    // Web: selector de archivos (fotos y PDF) con bytes. App: galería de
+    // fotos reducidas a 1920 px como JPG. En ambos casos se lee la hora de
+    // toma del EXIF.
+    final elegidos = await GaleriaEvidencias.elegir(maximo: restantes);
+    if (elegidos.isEmpty) return;
+    final optimizados = await EvidenciaCamara.prepararDeGaleria(
+      elegidos.where((f) => f.hasBytes || f.hasPath),
+    );
+    if (!mounted) return;
+    _agregarEvidencias(_evidenciasDesdeSeleccion(optimizados));
+  }
 
-    final nuevos = <EvidenciaAdjunto>[];
-
-    for (final f in picked.files) {
-      final nombre = (f.name).trim().isEmpty ? 'archivo' : f.name.trim();
-
-      // Mobile/Desktop: path
-      final path = f.path;
-      if (path != null && path.trim().isNotEmpty) {
-        nuevos.add(
-          EvidenciaAdjunto(path: path.trim(), nombre: nombre, bytes: null),
-        );
-      }
-    }
-
-    _agregarEvidencias(nuevos);
+  void _avisarMaximo() {
+    if (!mounted) return;
+    AppFeedback.showFromSnackBar(
+      context,
+      const SnackBar(
+        content: Text(
+          'Máximo $maxEvidenciasCierre evidencias por cierre. Quita alguna para agregar otra.',
+        ),
+      ),
+    );
   }
 
   Future<void> _tomarFoto() async {
@@ -213,8 +188,13 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
       return;
     }
 
+    var sobran = false;
     setState(() {
       for (final e in nuevos) {
+        if (_evidencias.length >= maxEvidenciasCierre) {
+          sobran = true;
+          break;
+        }
         final exists = _evidencias.any((x) {
           if (!kIsWeb) return (x.path ?? '') == (e.path ?? '');
           final xl = x.bytes?.length ?? 0;
@@ -224,6 +204,7 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
         if (!exists) _evidencias.add(e);
       }
     });
+    if (sobran) _avisarMaximo();
   }
 
   List<EvidenciaAdjunto> _evidenciasDesdeSeleccion(

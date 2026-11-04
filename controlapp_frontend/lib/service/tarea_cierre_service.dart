@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_application_1/api/jefe_operaciones_api.dart';
 import 'package:flutter_application_1/api/operario_api.dart';
 import 'package:flutter_application_1/api/supervisor_api.dart';
@@ -6,15 +7,24 @@ import 'package:flutter_application_1/model/cierre_tarea_pendiente_model.dart';
 import 'package:flutter_application_1/model/evidencia_adjunto_model.dart';
 import 'package:flutter_application_1/model/tarea_model.dart';
 import 'package:flutter_application_1/service/offline/cierre_tarea_offline_store.dart';
+import 'package:flutter_application_1/service/offline/connectivity_service.dart';
 import 'package:flutter_application_1/service/offline/error_classifier.dart';
 import 'package:flutter_application_1/service/offline/evidencia_persistencia.dart';
+import 'package:flutter_application_1/service/offline/tarea_sync_engine.dart';
 import 'package:flutter_application_1/service/offline/uuid_v4.dart';
+import 'package:flutter_application_1/service/reloj_confiable.dart';
 import 'package:flutter_application_1/service/permission_service.dart';
 
 /// Resultado de intentar cerrar una tarea: si el operario está sin
 /// conexión, el cierre queda [guardadoLocalPendiente] en vez de fallar —
 /// nunca se pierde el trabajo, se sincroniza solo cuando vuelva la señal.
 enum CierreTareaResultado { enviadoAlServidor, guardadoLocalPendiente }
+
+/// El teléfono ya sabe que no tiene señal: se guarda sin intentar el envío
+/// (es transitorio para `clasificarError`).
+class SinSenalConocida implements Exception {
+  const SinSenalConocida();
+}
 
 class TareaCierreService {
   TareaCierreService({
@@ -218,8 +228,15 @@ class TareaCierreService {
   }) async {
     final clienteCierreId = generarUuidV4();
     final fechaCierre = DateTime.now();
+    final fechaEstimada = await RelojConfiable.instance.estimarAhora();
 
     try {
+      // Ya se sabe que no hay señal (app nativa): se guarda de una vez en vez
+      // de hacer esperar al operario el tiempo límite. La cola lo intenta
+      // apenas se guarda y otra vez cuando vuelva la señal.
+      if (!kIsWeb && !ConnectivityService.instance.enLinea.value) {
+        throw const SinSenalConocida();
+      }
       await _operarioApi.cerrarTareaConEvidencias(
         operarioId: operarioId,
         tareaId: tarea.id,
@@ -232,6 +249,8 @@ class TareaCierreService {
       );
       return CierreTareaResultado.enviadoAlServidor;
     } catch (e) {
+      // Un rechazo de negocio se muestra ya; red, servidor, sesión o app
+      // desactualizada: se guarda en el teléfono y se envía solo.
       if (clasificarError(e) == ClaseError.negocio) rethrow;
 
       final evidenciasPersistidas = await EvidenciaPersistencia.persistir(
@@ -249,10 +268,13 @@ class TareaCierreService {
           observaciones: observaciones,
           insumosUsados: insumosUsados,
           fechaCierreLocal: fechaCierre,
+          fechaCierreEstimada: fechaEstimada,
+          descripcionTarea: tarea.descripcion,
           evidencias: evidenciasPersistidas,
           creadoEn: fechaCierre,
         ),
       );
+      await TareaSyncEngine.instance.programarEnvio();
 
       return CierreTareaResultado.guardadoLocalPendiente;
     }

@@ -25,33 +25,53 @@ class EvidenciaPersistencia {
           ? e.nombre.trim()
           : 'evidencia_$indice.jpg';
 
+      // Origen: el archivo que dejó la cámara o la galería (temporal) o, si
+      // la evidencia solo trae bytes, esos bytes. Ninguna se descarta.
+      List<int>? bytes;
+      File? origenFile;
       final origenPath = e.path?.trim();
-      if (origenPath == null || origenPath.isEmpty) continue;
+      if (origenPath != null && origenPath.isNotEmpty) {
+        final f = File(origenPath);
+        if (await f.exists()) origenFile = f;
+      }
+      if (origenFile == null) {
+        final b = e.bytes;
+        if (b == null || b.isEmpty) continue;
+        bytes = b;
+      }
 
-      final origenFile = File(origenPath);
-      if (!await origenFile.exists()) continue;
+      final tamano = origenFile != null
+          ? await origenFile.length()
+          : bytes!.length;
+      var nombreFinal = nombre;
+      List<int>? salida;
+      if (esNombreDeImagenComprimible(nombre) &&
+          tamano > bytesMinimosParaComprimir) {
+        try {
+          final entrada = bytes ?? await origenFile!.readAsBytes();
+          final comprimido = await compute(comprimirImagenEvidencia, entrada);
+          salida = comprimido;
+          nombreFinal = nombreTrasComprimir(nombre, comprimido);
+        } catch (_) {
+          salida = null;
+        }
+      }
 
       final destinoPath = p.join(
         destinoDir,
-        '${indice.toString().padLeft(2, '0')}_$nombre',
+        '${indice.toString().padLeft(2, '0')}_$nombreFinal',
       );
-
-      if (esNombreDeImagenComprimible(nombre) &&
-          await origenFile.length() > bytesMinimosParaComprimir) {
-        try {
-          final bytes = await origenFile.readAsBytes();
-          final comprimido = await compute(comprimirImagenEvidencia, bytes);
-          await File(destinoPath).writeAsBytes(comprimido);
-        } catch (_) {
-          await origenFile.copy(destinoPath);
-        }
-      } else {
+      if (salida != null) {
+        await File(destinoPath).writeAsBytes(salida, flush: true);
+      } else if (origenFile != null) {
         await origenFile.copy(destinoPath);
+      } else {
+        await File(destinoPath).writeAsBytes(bytes!, flush: true);
       }
 
       out.add(
         EvidenciaPendiente(
-          nombre: nombre,
+          nombre: nombreFinal,
           path: destinoPath,
           captura: e.captura,
         ),

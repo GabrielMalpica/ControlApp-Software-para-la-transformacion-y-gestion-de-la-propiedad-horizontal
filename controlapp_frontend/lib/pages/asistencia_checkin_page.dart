@@ -1,14 +1,25 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../api/asistencia_api.dart';
 import '../model/asistencia_model.dart';
+import '../model/asistencia_pendiente_model.dart';
 import '../service/app_error.dart';
 import '../service/app_feedback.dart';
+import '../service/offline/cierre_tarea_offline_store.dart';
+import '../service/offline/connectivity_service.dart';
+import '../service/offline/error_classifier.dart';
+import '../service/offline/tarea_sync_engine.dart';
+import '../service/offline/uuid_v4.dart';
+import '../service/reloj_confiable.dart';
+import '../service/session_service.dart';
+import '../service/tarea_cierre_service.dart' show SinSenalConocida;
 import '../service/theme.dart';
 import '../service/ubicacion_service.dart';
 import '../widgets/ayuda_ubicacion.dart';
+import '../widgets/pendientes_envio_banner.dart';
 
 class AsistenciaCheckinPage extends StatefulWidget {
   const AsistenciaCheckinPage({super.key});
@@ -24,6 +35,9 @@ class _AsistenciaCheckinPageState extends State<AsistenciaCheckinPage> {
   bool _procesando = false;
   bool _buscandoUbicacion = false;
   AsistenciaCheckinResultado? _ultimoResultado;
+
+  /// Hora del último escaneo que quedó guardado en el teléfono (sin señal).
+  DateTime? _guardadoSinSenal;
   String? _error;
   DateTime? _ultimoIntento;
 
@@ -125,19 +139,61 @@ class _AsistenciaCheckinPageState extends State<AsistenciaCheckinPage> {
       _error = null;
     });
 
+    // Identidad y hora del escaneo: si no hay señal, la marca viaja después
+    // con esta hora (y la estimada con el reloj monotónico), no la del envío.
+    final clienteRegistroId = generarUuidV4();
+    final escaneadoEn = DateTime.now();
+    final escaneadoEnEstimada = await RelojConfiable.instance.estimarAhora();
+
     try {
+      // El GPS funciona sin internet.
       final posicion = await _ubicacionParaRegistrar();
 
-      final resultado = await _api.checkin(
-        conjuntoId: conjuntoId,
-        qrPayload: valor,
-        latitud: posicion.latitude,
-        longitud: posicion.longitude,
-        precisionMetros: posicion.accuracy,
-      );
+      final AsistenciaCheckinResultado resultado;
+      try {
+        // Ya se sabe que no hay señal: se guarda de una vez.
+        if (!kIsWeb && !ConnectivityService.instance.enLinea.value) {
+          throw const SinSenalConocida();
+        }
+        resultado = await _api.checkin(
+          conjuntoId: conjuntoId,
+          qrPayload: valor,
+          latitud: posicion.latitude,
+          longitud: posicion.longitude,
+          precisionMetros: posicion.accuracy,
+          clienteRegistroId: clienteRegistroId,
+        );
+      } catch (e) {
+        // Rechazo del servidor (QR inválido, fuera del conjunto…): se muestra
+        // ya. Red, servidor caído, sesión o app desactualizada: en la app se
+        // guarda y se envía sola.
+        if (kIsWeb || clasificarError(e) == ClaseError.negocio) rethrow;
+        await _guardarSinSenal(
+          clienteRegistroId: clienteRegistroId,
+          conjuntoId: conjuntoId,
+          qrPayload: valor,
+          posicion: posicion,
+          escaneadoEn: escaneadoEn,
+          escaneadoEnEstimada: escaneadoEnEstimada,
+        );
+        if (!mounted) return;
+        setState(() {
+          _escaneando = false;
+          _ultimoResultado = null;
+          _guardadoSinSenal = escaneadoEn;
+        });
+        AppFeedback.showInfo(
+          context,
+          title: 'Guardado sin señal',
+          message:
+              'Tu marca quedó en el teléfono con la hora del escaneo. Se enviará sola apenas haya internet.',
+        );
+        return;
+      }
       if (!mounted) return;
       setState(() {
         _ultimoResultado = resultado;
+        _guardadoSinSenal = null;
         _escaneando = false;
       });
       final texto = resultado.tipo == 'ENTRADA'
@@ -166,6 +222,79 @@ class _AsistenciaCheckinPageState extends State<AsistenciaCheckinPage> {
     } finally {
       if (mounted) setState(() => _procesando = false);
     }
+  }
+
+  Future<void> _guardarSinSenal({
+    required String clienteRegistroId,
+    required String conjuntoId,
+    required String qrPayload,
+    required Position posicion,
+    required DateTime escaneadoEn,
+    required DateTime? escaneadoEnEstimada,
+  }) async {
+    final session = SessionService();
+    final usuarioId = (await session.getUserId())?.trim() ?? '';
+    final rol = (await session.getRol())?.trim().toLowerCase() ?? '';
+    if (usuarioId.isEmpty) {
+      throw Exception(
+        'No se pudo identificar tu usuario. Cierra sesión y vuelve a entrar.',
+      );
+    }
+    await CierreTareaOfflineStore.instance.guardarAsistencia(
+      AsistenciaPendiente(
+        clienteRegistroId: clienteRegistroId,
+        usuarioId: usuarioId,
+        rol: rol,
+        conjuntoId: conjuntoId,
+        qrPayload: qrPayload,
+        latitud: posicion.latitude,
+        longitud: posicion.longitude,
+        precisionMetros: posicion.accuracy,
+        registradaEn: escaneadoEn,
+        registradaEnEstimada: escaneadoEnEstimada,
+        creadoEn: escaneadoEn,
+      ),
+    );
+    await TareaSyncEngine.instance.programarEnvio();
+  }
+
+  Widget _buildGuardadoSinSenalCard() {
+    final hora = _guardadoSinSenal;
+    if (hora == null) return const SizedBox.shrink();
+    return Card(
+      elevation: 0,
+      color: Colors.orange.withValues(alpha: 0.10),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.orange.shade700),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.cloud_off_rounded, color: Colors.orange.shade800),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Guardado sin señal, se enviará solo',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text('Escaneado a las ${_formatHora(hora)}.'),
+            const SizedBox(height: 4),
+            const Text(
+              'Se envía apenas haya internet, aunque cierres la app. Si el servidor lo rechaza, verás el motivo en tus pendientes de enviar.',
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildResultadoCard() {
@@ -366,7 +495,9 @@ class _AsistenciaCheckinPageState extends State<AsistenciaCheckinPage> {
                     textAlign: TextAlign.center,
                   ),
                 ),
+              _buildGuardadoSinSenalCard(),
               _buildResultadoCard(),
+              const PendientesEnvioBanner(padding: EdgeInsets.only(top: 12)),
             ],
           ],
         ),

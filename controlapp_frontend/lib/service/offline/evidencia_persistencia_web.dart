@@ -35,7 +35,7 @@ class EvidenciaPersistencia {
 
       out.add(
         EvidenciaPendiente(
-          nombre: nombre,
+          nombre: nombreTrasComprimir(nombre, finalBytes),
           bytesBase64: base64Encode(finalBytes),
           captura: e.captura,
         ),

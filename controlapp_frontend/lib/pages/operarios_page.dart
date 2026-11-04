@@ -28,6 +28,7 @@ import 'package:flutter_application_1/pages/gerente/compromisos_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_por_conjunto_page.dart';
 import 'package:flutter_application_1/pages/gerente/lista_insumos_page.dart';
 import 'package:flutter_application_1/pages/asistencia_checkin_page.dart';
+import 'package:flutter_application_1/widgets/pendientes_envio_banner.dart';
 
 class OperarioDashboardPage extends StatefulWidget {
   final String nit;
@@ -210,6 +211,9 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                 permitirCambiar: false,
                 onChanged: (_) {},
               ),
+              // Lo guardado sin señal y, sobre todo, lo que el servidor
+              // rechazó: el operario lo ve apenas entra.
+              const PendientesEnvioBanner(padding: EdgeInsets.only(top: 18)),
               const SizedBox(height: 18),
               if (_can('tareas.ver')) ...[
                 HoyOperarioCard(nit: widget.nit),
@@ -314,7 +318,8 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => CronogramaClaroPage(nit: widget.nit),
+                              builder: (_) =>
+                                  CronogramaClaroPage(nit: widget.nit),
                             ),
                           );
                         },

@@ -31,6 +31,27 @@
   </IfModule>
 </FilesMatch>
 
+# App Android (docs/app-android-sin-conexion.md). La APK se descarga con su
+# tipo correcto (si no, algunos navegadores la guardan como .zip o .bin) y el
+# manifiesto que lee la auto-actualización se revisa siempre con el servidor.
+<IfModule mod_mime.c>
+  AddType application/vnd.android.package-archive .apk
+</IfModule>
+<FilesMatch "^android\.json$">
+  <IfModule mod_expires.c>
+    ExpiresActive Off
+  </IfModule>
+  <IfModule mod_headers.c>
+    Header set Cache-Control "no-cache"
+    Header unset Expires
+  </IfModule>
+</FilesMatch>
+<FilesMatch "\.apk$">
+  <IfModule mod_headers.c>
+    Header set Cache-Control "no-cache"
+  </IfModule>
+</FilesMatch>
+
 # Content-Security-Policy: limita lo que puede cargar y ejecutar la página si
 # alguien logra inyectarle un script (docs/actualizacion-web.md, "Content-
 # Security-Policy", explica cada fuente y cómo ampliarla).

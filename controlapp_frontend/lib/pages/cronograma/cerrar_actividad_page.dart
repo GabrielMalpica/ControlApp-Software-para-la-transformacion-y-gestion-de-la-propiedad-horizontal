@@ -1,12 +1,13 @@
 import 'dart:typed_data';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
+import 'package:flutter_application_1/api/evidencias_multipart.dart'
+    show maxEvidenciasCierre;
 import 'package:flutter_application_1/model/evidencia_adjunto_model.dart';
 import 'package:flutter_application_1/model/inventario_item_model.dart';
 import 'package:flutter_application_1/model/tarea_model.dart';
@@ -16,8 +17,8 @@ import 'package:flutter_application_1/utils/cronograma/agrupar_actividades.dart'
 import 'package:flutter_application_1/utils/cronograma/categoria_visual.dart';
 import 'package:flutter_application_1/utils/cronograma/cierre_utils.dart';
 import 'package:flutter_application_1/utils/pickers/clipboard_image_capture_bridge.dart';
+import 'package:flutter_application_1/utils/pickers/galeria_evidencias.dart';
 import 'package:flutter_application_1/utils/pickers/optimizar_imagen_bridge.dart';
-import 'package:flutter_application_1/utils/pickers/selected_upload_file.dart';
 import 'package:flutter_application_1/utils/uploader_preview/preview_bridge.dart';
 import 'package:flutter_application_1/widgets/ayuda_ubicacion.dart';
 import 'package:flutter_application_1/widgets/cerrar_tarea_sheet.dart';
@@ -121,16 +122,25 @@ class _CerrarActividadPageState extends State<CerrarActividadPage> {
       _avisar('No se pudo leer la foto. Intenta de nuevo.');
       return;
     }
+    var agregadas = 0;
+    var sobran = false;
     setState(() {
       for (final e in nuevas) {
-        if (!_fotos.any((x) => mismaEvidencia(x, e))) _fotos.add(e);
+        if (_fotos.length >= maxEvidenciasCierre) {
+          sobran = true;
+          break;
+        }
+        if (!_fotos.any((x) => mismaEvidencia(x, e))) {
+          _fotos.add(e);
+          agregadas++;
+        }
       }
     });
-    _avisar(
-      nuevas.length == 1
-          ? 'Foto agregada.'
-          : '${nuevas.length} fotos agregadas.',
-    );
+    if (sobran) {
+      _avisar('Máximo $maxEvidenciasCierre fotos por cierre.');
+      return;
+    }
+    _avisar(agregadas <= 1 ? 'Foto agregada.' : '$agregadas fotos agregadas.');
   }
 
   void _avisar(String texto) {
@@ -152,35 +162,17 @@ class _CerrarActividadPageState extends State<CerrarActividadPage> {
   }
 
   Future<void> _elegirArchivos() async {
-    final elegidos = await FilePicker.platform.pickFiles(
-      allowMultiple: true,
-      withData: kIsWeb,
-      type: FileType.custom,
-      allowedExtensions: const [
-        'jpg',
-        'jpeg',
-        'jfif',
-        'png',
-        'webp',
-        'gif',
-        'bmp',
-        'heic',
-        'heif',
-        'pdf',
-      ],
-    );
-    if (elegidos == null) return;
-    // En web las fotos se reducen a 1920 px para que el cierre suba rápido y
-    // llevan la hora de toma de su EXIF.
-    final archivos = await EvidenciaCamara.prepararDeGaleria(
-      elegidos.files.map(
-        (f) => SelectedUploadFile(
-          name: f.name,
-          bytes: f.bytes,
-          path: kIsWeb ? null : f.path,
-        ),
-      ),
-    );
+    final restantes = maxEvidenciasCierre - _fotos.length;
+    if (restantes <= 0) {
+      _avisar('Máximo $maxEvidenciasCierre fotos por cierre.');
+      return;
+    }
+    // Web: selector de archivos (fotos y PDF), reducidas a 1920 px. App:
+    // galería de fotos ya reducidas como JPG. Llevan la hora de toma de su
+    // EXIF.
+    final elegidos = await GaleriaEvidencias.elegir(maximo: restantes);
+    if (elegidos.isEmpty) return;
+    final archivos = await EvidenciaCamara.prepararDeGaleria(elegidos);
     _agregar(evidenciasDesdeArchivos(archivos));
   }
 

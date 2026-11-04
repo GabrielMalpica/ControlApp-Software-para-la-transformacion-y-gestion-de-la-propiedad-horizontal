@@ -11,6 +11,7 @@ import 'package:flutter_application_1/pages/cronograma/semana_trabajador_view.da
 import 'package:flutter_application_1/pages/tareas_page.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/service/offline/connectivity_service.dart';
 import 'package:flutter_application_1/service/offline/tarea_sync_engine.dart';
 import 'package:flutter_application_1/service/tarea_cierre_service.dart';
 import 'package:flutter_application_1/service/theme.dart';
@@ -588,7 +589,7 @@ class _MisActividadesPageState extends State<MisActividadesPage> {
               ? const Color(0xFFFDE8E8)
               : const Color(0xFFFDF0E1),
           texto: _conError > 0
-              ? '$n cierre${n == 1 ? '' : 's'} guardado${n == 1 ? '' : 's'} sin enviar; $_conError con un problema. Toca "Ver" para revisarlo.'
+              ? '$_conError cierre${_conError == 1 ? ' no se pudo enviar' : 's no se pudieron enviar'}: el servidor lo rechazó. Toca "Ver" para ver el motivo y tus fotos guardadas.'
               : '$n cierre${n == 1 ? '' : 's'} guardado${n == 1 ? '' : 's'} en el teléfono. Se enviará${n == 1 ? '' : 'n'} solo${n == 1 ? '' : 's'} con señal.',
           accion: 'Ver',
           onAccion: () async {
@@ -1087,26 +1088,46 @@ class ActividadOperarioPage extends StatelessWidget {
                                     ? 'La cerraste tú.'
                                     : 'La cerró $cerradoPor.',
                               ),
-                            if (puedeIniciar) ...[
-                              const SizedBox(height: 8),
-                              OutlinedButton.icon(
-                                onPressed: () =>
-                                    Navigator.of(context).pop('iniciar'),
-                                style: OutlinedButton.styleFrom(
-                                  minimumSize: const Size.fromHeight(54),
-                                  backgroundColor: const Color(0xFFFFF4D1),
+                            if (puedeIniciar)
+                              // "Iniciar" solo sirve con señal (avisa al
+                              // supervisor al momento); el cierre sí se
+                              // guarda sin señal.
+                              ValueListenableBuilder<bool>(
+                                valueListenable:
+                                    ConnectivityService.instance.enLinea,
+                                builder: (context, enLinea, _) => Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(height: 8),
+                                    OutlinedButton.icon(
+                                      onPressed: enLinea
+                                          ? () => Navigator.of(
+                                              context,
+                                            ).pop('iniciar')
+                                          : null,
+                                      style: OutlinedButton.styleFrom(
+                                        minimumSize: const Size.fromHeight(54),
+                                        backgroundColor: enLinea
+                                            ? const Color(0xFFFFF4D1)
+                                            : null,
+                                      ),
+                                      icon: const Icon(Icons.play_circle),
+                                      label: const Text('Iniciar actividad'),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 6),
+                                      child: Text(
+                                        enLinea
+                                            ? 'Opcional: avisa a tu supervisor que ya empezaste.'
+                                            : 'Sin señal no se puede marcar el inicio: puedes cerrarla directamente cuando termines.',
+                                        style: const TextStyle(
+                                          color: AppTheme.textMuted,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                icon: const Icon(Icons.play_circle),
-                                label: const Text('Iniciar actividad'),
                               ),
-                              const Padding(
-                                padding: EdgeInsets.only(top: 6),
-                                child: Text(
-                                  'Opcional: avisa a tu supervisor que ya empezaste.',
-                                  style: TextStyle(color: AppTheme.textMuted),
-                                ),
-                              ),
-                            ],
                             if (!puedeCerrar &&
                                 motivoNoCierre != null &&
                                 !estado.cerrada) ...[
