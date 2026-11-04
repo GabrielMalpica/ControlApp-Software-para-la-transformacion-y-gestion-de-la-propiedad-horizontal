@@ -405,5 +405,21 @@ describe("EvidenciaController.obtener", () => {
     expect(next).not.toHaveBeenCalled();
     expect(mockGetEvidenciaStream).toHaveBeenCalledWith(ID_TAREA);
     expect(res.setHeader).toHaveBeenCalledWith("Content-Type", "image/jpeg");
+    expect(res.setHeader).toHaveBeenCalledWith("Cache-Control", "private, max-age=2592000, immutable");
+    expect(res.setHeader).toHaveBeenCalledWith("ETag", `"ev-${ID_TAREA}"`);
+  });
+
+  test("si el navegador ya la tiene (If-None-Match), responde 304 sin bajarla de Drive", async () => {
+    jest.spyOn(EvidenciaAccesoService.prototype, "autorizar").mockResolvedValueOnce(undefined);
+    const end = jest.fn();
+    const res = { setHeader: jest.fn(), status: jest.fn(() => ({ end })) };
+    const next = jest.fn();
+    const req = { ...reqDe(ID_TAREA), headers: { "if-none-match": `"ev-${ID_TAREA}"` } };
+
+    await new EvidenciaController().obtener(req, res as any, next);
+
+    expect(res.status).toHaveBeenCalledWith(304);
+    expect(end).toHaveBeenCalled();
+    expect(mockGetEvidenciaStream).not.toHaveBeenCalled();
   });
 });

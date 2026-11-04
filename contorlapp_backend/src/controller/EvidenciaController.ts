@@ -46,10 +46,21 @@ export class EvidenciaController {
         rol: String(req.user?.rol ?? "").trim(),
         empresaId,
       });
+
+      // Un archivo de Drive no cambia de contenido con el mismo id: el
+      // navegador lo guarda 30 días y, si pregunta de nuevo, se le responde
+      // 304 sin volver a bajarlo de Drive (cada descarga tarda ~0,6 s).
+      const etag = `"ev-${fileId}"`;
+      res.setHeader("Cache-Control", "private, max-age=2592000, immutable");
+      res.setHeader("ETag", etag);
+      if (String(req.headers?.["if-none-match"] ?? "").split(/\s*,\s*/).includes(etag)) {
+        res.status(304).end();
+        return;
+      }
+
       const { stream, mimeType } = await getEvidenciaStream(fileId);
 
       res.setHeader("Content-Type", mimeType);
-      res.setHeader("Cache-Control", "private, max-age=86400");
 
       stream.on("error", (err) => {
         if (!res.headersSent) {
