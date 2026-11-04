@@ -1,8 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 import 'app.dart';
@@ -12,6 +10,7 @@ import 'service/http/cliente_http_bridge.dart';
 import 'service/offline/ciclo_vida_sincronizacion.dart';
 import 'service/offline/sincronizacion_fondo.dart';
 import 'service/offline/tarea_sync_engine.dart';
+import 'utils/url_web_bridge.dart';
 
 Future<void> main() async {
   // En la app nativa todas las peticiones pasan por ClienteHttpApp
@@ -19,9 +18,7 @@ Future<void> main() async {
   // vinculación de Flutter se inicializa dentro de la misma zona.
   await ejecutarConClienteApp(() async {
     WidgetsFlutterBinding.ensureInitialized();
-    if (kIsWeb) {
-      usePathUrlStrategy();
-    }
+    configurarUrlsWeb();
     unawaited(initializeDateFormatting('es', null));
     unawaited(AppInfo.cargar());
 
