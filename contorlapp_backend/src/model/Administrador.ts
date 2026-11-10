@@ -64,7 +64,9 @@ export const ReemplazarAdministradoresDTO = z.object({
     .array(
       z.object({
         conjuntoId: z.string().trim().min(3),
-        nuevoAdminId: z.number().int().positive(),
+        nuevoAdminId: z
+          .union([z.string().trim().min(1), z.number().int().positive()])
+          .transform(String),
       }),
     )
     .superRefine((reemplazos, ctx) => {

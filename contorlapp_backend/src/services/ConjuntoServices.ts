@@ -268,27 +268,36 @@ export class ConjuntoService {
         throw new Error("El conjunto ya tiene un administrador asignado.");
       }
 
-      const administrador = await tx.administrador.findUnique({
+      const usuario = await tx.usuario.findUnique({
         where: { id: administradorId },
-        select: {
-          id: true,
-          usuario: { select: { rol: true } },
-          conjuntos: { select: { nit: true } },
-        },
+        select: { id: true, rol: true },
       });
-      if (!administrador || administrador.usuario.rol !== "administrador") {
+      if (!usuario || usuario.rol !== "administrador") {
         throw new Error("No existe una cuenta de administrador con esa cédula.");
       }
-      if (administrador.conjuntos.length > 0) {
+      const administrador = await tx.administrador.findUnique({
+        where: { id: administradorId },
+        select: { id: true, conjuntos: { select: { nit: true } } },
+      });
+      if (administrador && administrador.conjuntos.length > 0) {
         throw new Error(
           "La cuenta ya está asignada a un conjunto y no se puede recuperar desde aquí.",
         );
       }
 
-      await tx.conjunto.update({
-        where: { nit: this.conjuntoId },
-        data: { administrador: { connect: { id: administradorId } } },
-      });
+      if (administrador) {
+        await tx.conjunto.update({
+          where: { nit: this.conjuntoId },
+          data: { administrador: { connect: { id: administradorId } } },
+        });
+      } else {
+        await tx.administrador.create({
+          data: {
+            id: administradorId,
+            conjuntos: { connect: { nit: this.conjuntoId } },
+          },
+        });
+      }
       return { ok: true };
     }, { isolationLevel: "Serializable" });
   }

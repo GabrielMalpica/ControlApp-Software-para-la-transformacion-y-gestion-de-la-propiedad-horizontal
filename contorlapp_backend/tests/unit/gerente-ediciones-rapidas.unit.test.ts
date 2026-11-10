@@ -88,6 +88,12 @@ function makePrisma(params: {
         return usuarios.get(where.id);
       }),
     },
+    administrador: {
+      create: jest.fn(async ({ data }: any) => {
+        perfilesAdmin.add(data.id);
+        return { id: data.id };
+      }),
+    },
     supervisor: {
       update: jest.fn(async ({ where, data }: any) => {
         supervisores.set(where.id, { ...supervisores.get(where.id)!, ...data });
@@ -350,7 +356,6 @@ describe("reemplazarAdminEnVariosConjuntos: valida al administrador nuevo y audi
     ["no existe", 99, 404],
     ["no tiene rol administrador", 40, 404],
     ["tiene conjuntos de otra empresa", 50, 404],
-    ["no tiene perfil de administrador", 60, 404],
     ["está inactivo", 30, 400],
   ])("rechaza un administrador nuevo que %s", async (_caso, nuevoAdminId, status) => {
     const { prisma, conjuntos, eventos } = escenario();
@@ -470,6 +475,17 @@ describe("reemplazarAdminEnVariosConjuntos: valida al administrador nuevo y audi
     expect(eventos[0].descripcion).toMatch(
       /asignó a Nora Nueva \(20\) como administrador del conjunto Conjunto C-1 \(C-1\) en reemplazo de Ana Anterior \(10\)/,
     );
+  });
+
+  test("crea el perfil faltante al asignar un administrador nuevo", async () => {
+    const { prisma, conjuntos } = escenario();
+
+    await servicio(prisma).reemplazarAdminEnVariosConjuntos({
+      reemplazos: [{ conjuntoId: "C-1", nuevoAdminId: "60" }],
+    });
+
+    expect(prisma.administrador.create).toHaveBeenCalledWith({ data: { id: "60" } });
+    expect(conjuntos.get("C-1")?.administradorId).toBe("60");
   });
 
   test("lista vacía: no hace nada", async () => {

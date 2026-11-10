@@ -1170,7 +1170,7 @@ export class GerenteService {
 
     if (existeId) {
       const error = new Error("USER_ALREADY_EXISTS");
-      Object.assign(error, { status: 409 });
+      Object.assign(error, { status: 409, code: "USER_ALREADY_EXISTS" });
       throw error;
     }
     if (existeCorreo) throw new Error("Ya existe un usuario con ese correo.");
@@ -5661,8 +5661,9 @@ export class GerenteService {
   /**
    * Cambia el administrador de varios conjuntos en una sola transaccion: o se
    * aplican todos o ninguno. Los conjuntos deben ser de la empresa autenticada y
-   * cada administrador nuevo debe existir, tener rol y perfil de administrador,
-   * estar activo y no tener conjuntos de otra empresa.
+   * cada administrador nuevo debe existir, tener rol de administrador y estar
+   * activo. Si aún no tiene perfil se crea; sus conjuntos actuales, si hay,
+   * deben pertenecer a esta empresa.
    */
   async reemplazarAdminEnVariosConjuntos(payload: unknown) {
     const { reemplazos } = ReemplazarAdministradoresDTO.parse(payload);
@@ -5714,8 +5715,8 @@ export class GerenteService {
         const esAdministradorDeLaEmpresa =
           admin != null &&
           normalizarRol(admin.rol) === Rol.administrador &&
-          admin.administrador != null &&
-          admin.administrador.conjuntos.every((c) => c.empresaId === empresaId);
+          (admin.administrador == null ||
+            admin.administrador.conjuntos.every((c) => c.empresaId === empresaId));
         if (!admin || !esAdministradorDeLaEmpresa) {
           throw errorConEstado(404, `No hay un administrador con id ${id} en la empresa.`);
         }
@@ -5732,6 +5733,13 @@ export class GerenteService {
         const conjunto = conjuntoPorNit.get(conjuntoId)!;
         const admin = adminPorId.get(nuevoAdminId.toString())!;
         if (conjunto.administradorId === admin.id) continue;
+
+        // El formulario de creación guarda primero Usuario y luego asigna el
+        // conjunto. Si ese usuario no tenía todavía fila Administrador, se
+        // crea aquí para permitir asignar o reemplazar en una sola operación.
+        if (!admin.administrador) {
+          await tx.administrador.create({ data: { id: admin.id } });
+        }
 
         await tx.conjunto.update({
           where: { nit: conjuntoId },
