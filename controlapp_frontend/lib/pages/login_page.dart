@@ -190,7 +190,7 @@ class _LoginPageState extends State<LoginPage> {
                   textInputAction: TextInputAction.done,
                   autofillHints: const <String>[AutofillHints.password],
                   decoration: const InputDecoration(
-                    labelText: 'Contrasena',
+                    labelText: 'Contraseña',
                     prefixIcon: Icon(Icons.lock_outline_rounded),
                   ),
                   onSubmitted: (_) => _loading ? null : _submit(),

@@ -66,36 +66,4 @@ class AdministradorApi {
 
     return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
   }
-
-  Future<Map<String, dynamic>> actualizarPqrs({
-    required String adminId,
-    required int id,
-    String? titulo,
-    bool? completado,
-  }) async {
-    final body = <String, dynamic>{
-      if (titulo != null) 'titulo': titulo,
-      if (completado != null) 'completado': completado,
-    };
-    final resp = await _client.patch(
-      '${AppConstants.administradorBase}/$adminId/compromisos/$id',
-      body: body,
-    );
-
-    if (resp.statusCode != 200) {
-      throw Exception('Error actualizando PQRS: ${resp.body}');
-    }
-
-    return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
-  }
-
-  Future<void> eliminarPqrs({required String adminId, required int id}) async {
-    final resp = await _client.delete(
-      '${AppConstants.administradorBase}/$adminId/compromisos/$id',
-    );
-
-    if (resp.statusCode != 200 && resp.statusCode != 204) {
-      throw Exception('Error eliminando PQRS: ${resp.body}');
-    }
-  }
 }

@@ -362,8 +362,19 @@ class TamanoTextoBoton extends StatelessWidget {
     return ValueListenableBuilder<double>(
       valueListenable: TamanoTexto.factor,
       builder: (context, _, __) {
-        final angosto = MediaQuery.sizeOf(context).width < 600;
+        final ancho = MediaQuery.sizeOf(context).width;
+        final angosto = ancho < 600;
         final etiqueta = TamanoTexto.etiqueta;
+        // En celular el texto le quitaba espacio al título de la barra
+        // ("Cronogr…"): solo el ícono, con el tamaño en la ayuda.
+        if (ancho < 440) {
+          return IconButton(
+            tooltip: 'Tamaño de letra: $etiqueta. Toca para cambiar',
+            onPressed: TamanoTexto.siguiente,
+            color: color,
+            icon: const Icon(Icons.format_size),
+          );
+        }
         return Semantics(
           button: true,
           label: 'Tamaño de letra: $etiqueta. Toca para cambiar',

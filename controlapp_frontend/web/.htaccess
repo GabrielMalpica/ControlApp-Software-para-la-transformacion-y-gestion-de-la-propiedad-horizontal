@@ -11,9 +11,19 @@
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
 
+  # /descargas no tiene rutas de Flutter: si el APK o android.json no están
+  # publicados se responde 404 (antes salía la app y el botón "Descargar la
+  # app" volvía al inicio sin descargar nada).
+  RewriteRule ^descargas/ - [R=404,L]
+
   # Todo lo demás va a index.html (para rutas de Flutter)
   RewriteRule ^ index.html [L]
 </IfModule>
+
+# Estado de la subida por FTP (GitHub Actions): no es público.
+<FilesMatch "^\.ftp-deploy">
+  Require all denied
+</FilesMatch>
 
 # Actualización automática de la app (docs/actualizacion-web.md). Estos
 # archivos tienen el mismo nombre en cada versión; Hostinger los guardaba 7

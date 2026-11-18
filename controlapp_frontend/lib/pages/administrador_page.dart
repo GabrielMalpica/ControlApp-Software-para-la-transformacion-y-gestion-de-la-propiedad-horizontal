@@ -121,7 +121,9 @@ class _AdministradorPageState extends State<AdministradorPage> {
     if (w >= 1100) return 4;
     if (w >= 800) return 4;
     if (w >= 520) return 3;
-    return 2;
+    // Celular: una columna con tarjetas en fila (ícono, texto grande y
+    // flecha); de a dos el texto quedaba diminuto.
+    return 1;
   }
 
   Future<void> _confirmLogout() async {
@@ -190,7 +192,7 @@ class _AdministradorPageState extends State<AdministradorPage> {
         crossAxisCount: crossAxisCount,
         crossAxisSpacing: 14,
         mainAxisSpacing: 14,
-        childAspectRatio: 1.05,
+        childAspectRatio: crossAxisCount == 1 ? 4.4 : 1.05,
       ),
       itemCount: tiles.length,
       itemBuilder: (_, i) {
@@ -467,22 +469,15 @@ class _AdministradorPageState extends State<AdministradorPage> {
             ),
             DashboardStatusCard(
               label: 'Conjunto activo',
-              value: compact ? conjunto.nit : conjunto.nombre,
+              value: conjunto.nombre,
               icon: Icons.apartment_rounded,
               color: AppTheme.green,
             ),
           ];
 
-          if (compact) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                cards[0],
-                const SizedBox(height: 12),
-                cards[1],
-              ],
-            );
-          }
+          // En celular el conjunto activo ya sale justo debajo (con su
+          // nombre, NIT y el selector): aquí solo se repetía su NIT.
+          if (compact) return cards[0];
 
           return Row(
             children: <Widget>[

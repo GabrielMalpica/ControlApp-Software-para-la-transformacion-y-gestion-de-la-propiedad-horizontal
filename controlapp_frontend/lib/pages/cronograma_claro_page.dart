@@ -3873,6 +3873,8 @@ class _CronogramaClaroPageState extends State<CronogramaClaroPage> {
   /* ================================= MES ================================= */
 
   Widget _buildVistaMes(String mesNombre) {
+    // En celular los textos largos partían "trabajador" en dos líneas.
+    final corto = MediaQuery.sizeOf(context).width < 480;
     final selector = Wrap(
       spacing: 10,
       runSpacing: 8,
@@ -3880,21 +3882,23 @@ class _CronogramaClaroPageState extends State<CronogramaClaroPage> {
       children: [
         const Text('Ver el mes:', style: TextStyle(color: AppTheme.textMuted)),
         SegmentedButton<_ModoMes>(
-          segments: const [
-            ButtonSegment(
+          showSelectedIcon: !corto,
+          segments: [
+            const ButtonSegment(
               value: _ModoMes.resumen,
               icon: Icon(Icons.calendar_month),
               label: Text('Resumen'),
             ),
             ButtonSegment(
               value: _ModoMes.matriz,
-              icon: Icon(Icons.table_chart_outlined),
-              label: Text('Matriz detallada'),
+              icon: const Icon(Icons.table_chart_outlined),
+              label: Text(corto ? 'Matriz' : 'Matriz detallada'),
             ),
             ButtonSegment(
               value: _ModoMes.horas,
-              icon: Icon(Icons.timer_outlined),
-              label: Text('Horas por trabajador'),
+              icon: const Icon(Icons.timer_outlined),
+              label: Text(corto ? 'Horas' : 'Horas por trabajador'),
+              tooltip: 'Horas por trabajador',
             ),
           ],
           selected: {_modoMes},

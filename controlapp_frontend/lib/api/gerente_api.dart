@@ -5,6 +5,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
+import 'evidencias_multipart.dart';
+import '../model/evidencia_adjunto_model.dart';
 import '../model/conjunto_excel_model.dart';
 import '../model/conjunto_model.dart';
 import '../model/planilla_usuario_model.dart';
@@ -279,6 +281,34 @@ class GerenteApi {
     }
   }
 
+  /// Asigna el administrador al conjunto, reemplazando al titular anterior si
+  /// lo hay. También crea el perfil de administrador si el usuario aún no lo
+  /// tenía.
+  Future<void> reemplazarAdministradorEnConjunto({
+    required String usuarioId,
+    required String conjuntoId,
+  }) async {
+    final id = usuarioId.trim();
+    if (id.isEmpty) {
+      throw const FormatException('La cédula del administrador no es válida.');
+    }
+    final resp = await _apiClient.post(
+      '${AppConstants.administradores}/reemplazos',
+      body: {
+        'reemplazos': [
+          {'conjuntoId': conjuntoId, 'nuevoAdminId': id},
+        ],
+      },
+    );
+    if (resp.statusCode != 204 && resp.statusCode != 200) {
+      throw ApiException.fromResponse(
+        statusCode: resp.statusCode,
+        body: resp.body,
+        fallback: 'No se pudo asignar el administrador al conjunto.',
+      );
+    }
+  }
+
   Future<void> asignarJefeOperaciones({required String usuarioId}) async {
     final res = await _apiClient.post(
       AppConstants.jefesOperaciones,
@@ -498,12 +528,8 @@ class GerenteApi {
   Future<Map<String, dynamic>> actualizarCompromiso({
     required int id,
     String? titulo,
-    bool? completado,
   }) async {
-    final body = <String, dynamic>{
-      if (titulo != null) 'titulo': titulo,
-      if (completado != null) 'completado': completado,
-    };
+    final body = <String, dynamic>{if (titulo != null) 'titulo': titulo};
     final resp = await _apiClient.patch(
       '${AppConstants.gerenteBase}/compromisos/$id',
       body: body,
@@ -514,6 +540,32 @@ class GerenteApi {
     }
 
     return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
+  }
+
+  Future<Map<String, dynamic>> agregarSeguimientoCompromiso({
+    required int id,
+    required String estado,
+    String? observacion,
+    List<EvidenciaAdjunto> evidencias = const [],
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('${AppConstants.gerenteBase}/compromisos/$id/actualizaciones'),
+    );
+    request.headers.addAll(await _authHeaders());
+    request.fields['estado'] = estado;
+    if (observacion != null && observacion.trim().isNotEmpty) {
+      request.fields['observacion'] = observacion.trim();
+    }
+    await adjuntarEvidencias(request, evidencias);
+    final response = await http.Response.fromStream(await request.send());
+    if (response.statusCode != 200) {
+      throw AppError.fromResponseBody(
+        response.body,
+        fallback: 'No se pudo guardar el avance de la PQRS.',
+      );
+    }
+    return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
   }
 
   Future<void> eliminarCompromiso(int id) async {

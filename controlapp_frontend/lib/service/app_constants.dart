@@ -2,8 +2,8 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb, kReleaseMode;
 
 class AppConstants {
-  static const String _localBaseUrlWebDesktop = 'http://localhost:3000';
-  static const String _localBaseUrlAndroid = 'http://10.0.2.2:3000';
+  static const String _localBaseUrlWebDesktop = 'http://localhost:4000';
+  static const String _localBaseUrlAndroid = 'http://10.0.2.2:4000';
 
   /// Cambia en build/run con:
   /// --dart-define=API_BASE_URL=https://tu-api

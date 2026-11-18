@@ -2141,47 +2141,68 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
           ),
         ]),
         const SizedBox(height: 14),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _sectionTitle('Distribución por estado'),
-                  const SizedBox(height: 8),
-                  _card(
-                    child: SizedBox(
-                      height: 260,
-                      child: Row(
-                        children: [
-                          Expanded(child: _pieEstados(k.byEstado)),
-                          const SizedBox(width: 10),
-                          SizedBox(
-                            width: 150,
-                            child: _legendEstados(k.byEstado),
+        // En celular las dos tarjetas lado a lado quedaban de ~150 px: el
+        // texto salía letra por letra y la leyenda se desbordaba. Debajo de
+        // 760 px van una debajo de la otra y la leyenda bajo el gráfico.
+        LayoutBuilder(
+          builder: (context, c) {
+            final angosto = c.maxWidth < 760;
+            final estados = Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sectionTitle('Distribución por estado'),
+                const SizedBox(height: 8),
+                _card(
+                  child: angosto
+                      ? Column(
+                          children: [
+                            SizedBox(
+                              height: 220,
+                              child: _pieEstados(k.byEstado),
+                            ),
+                            const SizedBox(height: 10),
+                            _legendEstados(k.byEstado, ajustada: true),
+                          ],
+                        )
+                      : SizedBox(
+                          height: 260,
+                          child: Row(
+                            children: [
+                              Expanded(child: _pieEstados(k.byEstado)),
+                              const SizedBox(width: 10),
+                              SizedBox(
+                                width: 150,
+                                child: _legendEstados(k.byEstado),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _sectionTitle('Top Operarios (por volumen)'),
-                  const SizedBox(height: 8),
-                  _card(
-                    child: SizedBox(height: 260, child: _barTopOperarios()),
-                  ),
-                ],
-              ),
-            ),
-          ],
+                        ),
+                ),
+              ],
+            );
+            final operarios = Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sectionTitle('Top Operarios (por volumen)'),
+                const SizedBox(height: 8),
+                _card(child: SizedBox(height: 260, child: _barTopOperarios())),
+              ],
+            );
+            if (angosto) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [estados, const SizedBox(height: 14), operarios],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: estados),
+                const SizedBox(width: 12),
+                Expanded(child: operarios),
+              ],
+            );
+          },
         ),
         const SizedBox(height: 14),
         _sectionTitle('Tareas por ubicación'),
@@ -2879,7 +2900,9 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     );
   }
 
-  Widget _legendEstados(Map<String, int> byEstado) {
+  /// [ajustada]: dentro de una columna (celular), mide lo que ocupa en vez
+  /// de llenar un alto fijo.
+  Widget _legendEstados(Map<String, int> byEstado, {bool ajustada = false}) {
     final entries = byEstado.entries.where((e) => e.value > 0).toList()
       ..sort((a, b) {
         final ia = ChartStyle.estadoOrder.indexOf(_estadoKey(a.key));
@@ -2893,6 +2916,8 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     if (total <= 0) return const SizedBox.shrink();
 
     return ListView.separated(
+      shrinkWrap: ajustada,
+      physics: ajustada ? const NeverScrollableScrollPhysics() : null,
       itemCount: entries.length,
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (_, i) {

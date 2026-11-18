@@ -13,6 +13,9 @@ class CompromisoModel {
     this.creadoPorId,
     this.creadoPorNombre,
     this.creadoPorRol,
+    this.estado = 'RECIBIDO',
+    this.estadoLabel = 'Recibido',
+    this.actualizaciones = const [],
   });
 
   final int id;
@@ -28,6 +31,9 @@ class CompromisoModel {
   String? creadoPorId;
   String? creadoPorNombre;
   String? creadoPorRol;
+  String estado;
+  String estadoLabel;
+  List<CompromisoActualizacionModel> actualizaciones;
 
   String get autorLabel {
     final nombre = (creadoPorNombre ?? '').trim();
@@ -73,6 +79,22 @@ class CompromisoModel {
       creadoPorId: json['creadoPorId']?.toString(),
       creadoPorNombre: json['creadoPorNombre']?.toString(),
       creadoPorRol: json['creadoPorRol']?.toString(),
+      estado:
+          (json['estado'] ??
+                  (json['completado'] == true ? 'CERRADO' : 'RECIBIDO'))
+              .toString(),
+      estadoLabel: (json['estadoLabel'] ?? '').toString(),
+      actualizaciones:
+          (json['actualizaciones'] is List
+                  ? json['actualizaciones'] as List
+                  : const [])
+              .whereType<Map>()
+              .map(
+                (item) => CompromisoActualizacionModel.fromJson(
+                  Map<String, dynamic>.from(item),
+                ),
+              )
+              .toList(),
     );
   }
 
@@ -89,6 +111,9 @@ class CompromisoModel {
     creadoPorId = other.creadoPorId;
     creadoPorNombre = other.creadoPorNombre;
     creadoPorRol = other.creadoPorRol;
+    estado = other.estado;
+    estadoLabel = other.estadoLabel;
+    actualizaciones = other.actualizaciones;
   }
 
   static DateTime? _parseDate(dynamic raw) {
@@ -106,5 +131,59 @@ class CompromisoModel {
     final month = date.month.toString().padLeft(2, '0');
     final year = date.year.toString();
     return '$day/$month/$year';
+  }
+}
+
+class CompromisoActualizacionModel {
+  const CompromisoActualizacionModel({
+    required this.id,
+    required this.estado,
+    required this.estadoLabel,
+    required this.observacion,
+    required this.evidencias,
+    required this.actorNombre,
+    required this.actorRol,
+    required this.creadaEn,
+  });
+
+  final int id;
+  final String estado;
+  final String estadoLabel;
+  final String? observacion;
+  final List<String> evidencias;
+  final String? actorNombre;
+  final String? actorRol;
+  final DateTime? creadaEn;
+
+  String get actorLabel {
+    final nombre = (actorNombre ?? '').trim();
+    final rol = (actorRol ?? '').trim();
+    if (nombre.isEmpty && rol.isEmpty) return 'Autor sin registrar';
+    if (nombre.isEmpty) return rol;
+    if (rol.isEmpty) return nombre;
+    return '$nombre · $rol';
+  }
+
+  factory CompromisoActualizacionModel.fromJson(Map<String, dynamic> json) {
+    return CompromisoActualizacionModel(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      estado: (json['estado'] ?? 'RECIBIDO').toString(),
+      estadoLabel: (json['estadoLabel'] ?? json['estado'] ?? 'Recibido')
+          .toString(),
+      observacion: json['observacion']?.toString(),
+      evidencias:
+          (json['evidencias'] is List ? json['evidencias'] as List : const [])
+              .map((value) => value.toString())
+              .where((value) => value.trim().isNotEmpty)
+              .toList(),
+      actorNombre: json['actorNombre']?.toString(),
+      actorRol: json['actorRol']?.toString(),
+      creadaEn: _parseDate(json['creadaEn']),
+    );
+  }
+
+  static DateTime? _parseDate(dynamic raw) {
+    if (raw == null) return null;
+    return DateTime.tryParse(raw.toString());
   }
 }

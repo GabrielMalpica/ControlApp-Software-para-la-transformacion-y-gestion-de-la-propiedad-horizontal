@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/auth_api.dart';
-import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/model/inventario_activo_model.dart';
 import 'package:flutter_application_1/widgets/dashboard_tile.dart';
 import 'package:flutter_application_1/widgets/dashboard_shell.dart';
@@ -73,17 +72,6 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
     } catch (_) {}
   }
 
-  Conjunto get _conjuntoActual => Conjunto(
-    nit: widget.nit,
-    nombre: _nombreConjuntoMostrado,
-    direccion: '',
-    correo: '',
-    activo: true,
-    tipoServicio: const <String>[],
-    consignasEspeciales: const <String>[],
-    valorAgregado: const <String>[],
-  );
-
   int _gridCountForWidth(double w) {
     if (w >= 1100) return 4;
     if (w >= 820) return 3;
@@ -97,7 +85,8 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
     // apaisada en vez del cuadrado usado para 3-4 columnas.
     switch (cols) {
       case 1:
-        return 2.4;
+        // Celular: tarjeta en fila (ícono, texto y flecha), baja y legible.
+        return 4.4;
       case 2:
         return 1.5;
       default:
@@ -166,9 +155,13 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
       backgroundColor: AppTheme.background,
       appBar: AppBar(
         backgroundColor: AppTheme.primary,
-        title: const Text(
-          "Panel del Operario",
-          style: TextStyle(color: Colors.white),
+        // En celular, con los 4 íconos de la barra, "Panel del Operario" se
+        // cortaba.
+        title: Text(
+          MediaQuery.sizeOf(context).width < 480
+              ? 'Mi panel'
+              : 'Panel del Operario',
+          style: const TextStyle(color: Colors.white),
         ),
         actions: [
           const PerfilAction(),
@@ -204,17 +197,11 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              ConjuntoSelectorCard(
-                conjuntoActual: _conjuntoActual,
-                conjuntos: <Conjunto>[_conjuntoActual],
-                selectedNit: widget.nit,
-                permitirCambiar: false,
-                onChanged: (_) {},
-              ),
-              // Lo guardado sin señal y, sobre todo, lo que el servidor
-              // rechazó: el operario lo ve apenas entra.
-              const PendientesEnvioBanner(padding: EdgeInsets.only(top: 18)),
-              const SizedBox(height: 18),
+              // El conjunto ya está arriba ("Conjunto vinculado"): repetirlo
+              // aquí empujaba la tarjeta de Hoy fuera de la pantalla del
+              // celular. Lo guardado sin señal y, sobre todo, lo que el
+              // servidor rechazó: el operario lo ve apenas entra.
+              const PendientesEnvioBanner(padding: EdgeInsets.only(bottom: 18)),
               if (_can('tareas.ver')) ...[
                 HoyOperarioCard(nit: widget.nit),
                 const SizedBox(height: 18),

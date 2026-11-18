@@ -648,7 +648,12 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
 
       case _QuickAction.tareaCrear:
         if (!_requiereConjuntoOrWarn()) return;
-        await go(CronogramaPage(nit: nit!));
+        await go(
+          CronogramaPage(
+            nit: nit!,
+            conjuntoNombre: _conjuntoSeleccionado?.nombre,
+          ),
+        );
         return;
 
       case _QuickAction.solicitudInsumo:
@@ -782,7 +787,9 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
           () => _abrirYRecargar(PreventivasPage(nit: nit)),
         ),
         _Tile("Cronograma", Icons.calendar_month, Colors.purple, () {
-          _abrirYRecargar(CronogramaPage(nit: nit));
+          _abrirYRecargar(
+            CronogramaPage(nit: nit, conjuntoNombre: conjunto.nombre),
+          );
         }),
         _Tile("Recursos del conjunto", Icons.event_repeat, AppTheme.yellow, () {
           Navigator.push(

@@ -183,6 +183,38 @@ test("--solo-revisar revisa la versión sin APK ni build y no escribe nada", asy
   assert.match(r.stderr, /Ya está publicado el versionCode 7/);
 });
 
+test("--auto-version usa el publicado + 1 y lo deja en GITHUB_OUTPUT", async () => {
+  const raiz = proyecto({ apk: null });
+  const anterior = path.join(raiz, "publicado.json");
+  const salida = path.join(raiz, "github-output.txt");
+  fs.writeFileSync(anterior, JSON.stringify({ versionCode: 12 }));
+  const r = await correr(raiz, ["--solo-revisar", "--auto-version", "--anterior", anterior], { GITHUB_OUTPUT: salida });
+  assert.equal(r.codigo, 0, r.stderr);
+  assert.match(r.stdout, /la nueva será 13/);
+  assert.match(fs.readFileSync(salida, "utf8"), /^version_code=13$/m);
+
+  // Si pubspec ya es mayor que lo publicado, manda pubspec.
+  fs.writeFileSync(anterior, JSON.stringify({ versionCode: 3 }));
+  const salida2 = path.join(raiz, "github-output-2.txt");
+  const r2 = await correr(raiz, ["--solo-revisar", "--auto-version", "--anterior", anterior], { GITHUB_OUTPUT: salida2 });
+  assert.equal(r2.codigo, 0, r2.stderr);
+  assert.match(fs.readFileSync(salida2, "utf8"), /^version_code=7$/m);
+
+  // --minima se revisa contra la versión calculada.
+  fs.writeFileSync(anterior, JSON.stringify({ versionCode: 12 }));
+  assert.equal((await correr(raiz, ["--solo-revisar", "--auto-version", "--anterior", anterior, "--minima", "13"])).codigo, 0);
+});
+
+test("--version-code reemplaza el de pubspec en el nombre y en android.json", async () => {
+  const raiz = proyecto();
+  const r = await correr(raiz, ["--version-code", "21"]);
+  assert.equal(r.codigo, 0, r.stderr);
+  const info = leerJson(raiz);
+  assert.equal(info.versionCode, 21);
+  assert.equal(info.url, "https://controlapp.controlsas.com.co/descargas/controlapp-1.4.2%2B21.apk");
+  assert.ok(fs.existsSync(path.join(raiz, "build/web/descargas/controlapp-1.4.2+21.apk")));
+});
+
 test("pubspec sin versionCode, sin APK o con un archivo que no es APK falla", async () => {
   let r = await correr(proyecto({ version: "1.4.2" }));
   assert.notEqual(r.codigo, 0);

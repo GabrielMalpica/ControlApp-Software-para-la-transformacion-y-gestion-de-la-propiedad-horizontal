@@ -73,6 +73,14 @@ class _DashboardTileState extends State<DashboardTile> {
                       // de dejar que el Column desborde (RenderFlex
                       // overflow), lo escalamos hacia abajo con FittedBox
                       // para que siempre quepa, sin importar la resolución.
+                      // Tarjeta ancha y baja (celular, una sola columna): en
+                      // fila, con el texto a tamaño normal. Con el diseño en
+                      // columna el FittedBox lo encogía hasta dejarlo
+                      // diminuto.
+                      if (constraints.maxHeight > 0 &&
+                          constraints.maxWidth / constraints.maxHeight >= 2.6) {
+                        return _enFila(theme, baseColor);
+                      }
                       final barHeight = constraints.maxHeight < 170
                           ? 40.0
                           : 52.0;
@@ -186,6 +194,60 @@ class _DashboardTileState extends State<DashboardTile> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _enFila(ThemeData theme, Color baseColor) {
+    return Row(
+      children: <Widget>[
+        SizedBox(
+          width: 10,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: <Color>[
+                  baseColor.withValues(alpha: 0.88),
+                  baseColor.withValues(alpha: 0.68),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 14),
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: RadialGradient(
+              colors: <Color>[
+                baseColor.withValues(alpha: _hovered ? 0.24 : 0.18),
+                baseColor.withValues(alpha: 0.06),
+              ],
+            ),
+            border: Border.all(color: baseColor.withValues(alpha: 0.10)),
+          ),
+          child: Icon(widget.icon, size: 26, color: baseColor),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Text(
+            widget.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+              fontSize: 17,
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Icon(Icons.arrow_forward_rounded, color: baseColor),
+        ),
+      ],
     );
   }
 }

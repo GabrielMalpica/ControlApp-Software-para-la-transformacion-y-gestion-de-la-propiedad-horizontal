@@ -391,7 +391,9 @@ class _CerrarActividadPageState extends State<CerrarActividadPage> {
         children: [
           if (widget.inventario.isEmpty)
             const Text(
-              'No se pudo cargar el inventario. Puedes cerrar sin registrar insumos.',
+              // Vacío tanto si la bodega no tiene insumos como si no se pudo
+              // traer (sin señal y sin copia guardada).
+              'No hay insumos de bodega para registrar. Puedes cerrar sin registrar insumos.',
               style: TextStyle(color: AppTheme.textMuted),
             )
           else ...[

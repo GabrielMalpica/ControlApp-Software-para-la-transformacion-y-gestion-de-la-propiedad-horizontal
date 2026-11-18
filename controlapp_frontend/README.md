@@ -14,10 +14,10 @@ No necesitas pasar nada extra si quieres usar la URL por defecto.
 Si quieres apuntar al backend local, ejecuta con:
 
 ```bash
-flutter run --dart-define=API_BASE_URL=http://localhost:3000
+flutter run --dart-define=API_BASE_URL=http://localhost:4000
 ```
 
-> En emulador Android normalmente debes usar `http://10.0.2.2:3000`.
+> En emulador Android normalmente debes usar `http://10.0.2.2:4000`.
 
 ## Nota
 Todas las APIs deben usar `AppConstants.baseUrl` para evitar tener URLs hardcodeadas a `localhost`.

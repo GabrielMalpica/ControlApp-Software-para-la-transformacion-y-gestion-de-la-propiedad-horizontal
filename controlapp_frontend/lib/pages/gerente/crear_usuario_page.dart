@@ -305,10 +305,12 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
             rolSeleccionado != 'administrador') {
           rethrow;
         }
-        await _conjuntoApi.recuperarAdministradorSinConjunto(
-          conjuntoNit: widget.nit,
-          administradorId: usuario.cedula,
-        );
+        if (_conjuntoSeleccionadoNit == null ||
+            _conjuntoSeleccionadoNit!.trim().isEmpty) {
+          rethrow;
+        }
+        // Reutilizamos la cuenta existente y delegamos la asignación al flujo
+        // transaccional, que también reemplaza al administrador anterior.
         administradorRecuperado = true;
         usuarioCreado = usuario;
       }
@@ -348,12 +350,14 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
           break;
 
         case 'administrador':
-          if (!administradorRecuperado) {
-            await _gerenteApi.asignarAdministrador(
-              usuarioId: usuarioCreado.cedula,
-              conjuntoId: widget.nit,
-            );
+          final conjuntoNit = _conjuntoSeleccionadoNit;
+          if (conjuntoNit == null || conjuntoNit.trim().isEmpty) {
+            throw Exception('Seleccione un conjunto para el administrador.');
           }
+          await _gerenteApi.reemplazarAdministradorEnConjunto(
+            usuarioId: usuarioCreado.cedula,
+            conjuntoId: conjuntoNit,
+          );
           break;
 
         case 'jefe_operaciones':
@@ -399,7 +403,7 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
         title: const Text('Éxito'),
         content: Text(
           administradorRecuperado
-              ? 'La cuenta existente fue vinculada al conjunto. Se conservaron sus datos y contraseña.'
+              ? 'La cuenta existente quedó asignada al conjunto y reemplazó al administrador anterior. Se conservaron sus datos y contraseña.'
               : 'Guardado correctamente.',
         ),
         actions: [

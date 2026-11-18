@@ -24,12 +24,18 @@
 //   --anterior <url|ruta>  android.json publicado hoy: falla si su versionCode
 //                      es igual o mayor que el nuevo (los celulares no se
 //                      actualizarían). Si aún no hay uno publicado, sigue.
+//   --auto-version     Con --anterior: en vez de fallar, usa el versionCode
+//                      publicado + 1 (nunca menos que el de pubspec.yaml). Así
+//                      no hay que editar pubspec.yaml en cada publicación.
+//   --version-code <n> versionCode con el que se compiló (flutter build
+//                      --build-number); reemplaza el de pubspec.yaml.
 //   --raiz <carpeta>   Carpeta del proyecto Flutter (por defecto la de este script).
 //   --apk <ruta>       APK compilado (por defecto build/app/outputs/flutter-apk/app-release.apk).
 //   --web <carpeta>    Build web (por defecto build/web).
 //   --solo-revisar     Solo revisa versión, --minima y --anterior, sin APK ni
 //                      build (el workflow lo corre antes de compilar).
-// En GitHub Actions escribe version_name, version_code y apk en $GITHUB_OUTPUT.
+// En GitHub Actions escribe version_name, version_code (y apk, si empaqueta)
+// en $GITHUB_OUTPUT.
 
 const crypto = require("crypto");
 const fs = require("fs");
@@ -144,15 +150,12 @@ async function main() {
   const baseUrl = baseUrlValida(opcion("--base-url") ?? BASE_URL_POR_DEFECTO);
   const notas = opcion("--notas") ?? "";
 
-  const { versionName, versionCode } = leerVersion(path.join(raiz, "pubspec.yaml"));
-
-  const minimaTexto = opcion("--minima");
-  const minimaVersionCode = minimaTexto === undefined || minimaTexto.trim() === "" ? 1 : entero(minimaTexto, "--minima");
-  if (minimaVersionCode > versionCode) {
-    fallar(
-      `--minima ${minimaVersionCode} es mayor que el versionCode nuevo (${versionCode}): ni la versión que se publica podría usarse.`,
-    );
-  }
+  const leida = leerVersion(path.join(raiz, "pubspec.yaml"));
+  const versionName = leida.versionName;
+  let versionCode = leida.versionCode;
+  const forzado = opcion("--version-code");
+  if (forzado !== undefined) versionCode = entero(forzado, "--version-code");
+  const autoVersion = process.argv.includes("--auto-version");
 
   const soloRevisar = process.argv.includes("--solo-revisar");
   if (!soloRevisar) {
@@ -170,6 +173,10 @@ async function main() {
     const publicada = await leerAnterior(anterior);
     if (publicada === null) {
       aviso(`No hay android.json publicado en ${anterior}: es la primera versión.`);
+    } else if (publicada >= versionCode && autoVersion) {
+      versionCode = publicada + 1;
+      if (versionCode > VERSION_CODE_MAXIMO) fallar(`El versionCode ${versionCode} supera el máximo de Android.`);
+      aviso(`Versión publicada hoy: ${publicada}; la nueva será ${versionCode}.`);
     } else if (publicada >= versionCode) {
       fallar(
         `Ya está publicado el versionCode ${publicada} y el nuevo es ${versionCode}: los celulares no se actualizarían. ` +
@@ -179,8 +186,20 @@ async function main() {
       aviso(`Versión publicada hoy: ${publicada}; nueva: ${versionCode}.`);
     }
   }
+
+  const minimaTexto = opcion("--minima");
+  const minimaVersionCode = minimaTexto === undefined || minimaTexto.trim() === "" ? 1 : entero(minimaTexto, "--minima");
+  if (minimaVersionCode > versionCode) {
+    fallar(
+      `--minima ${minimaVersionCode} es mayor que el versionCode nuevo (${versionCode}): ni la versión que se publica podría usarse.`,
+    );
+  }
+
   if (soloRevisar) {
     aviso(`Versión ${versionName}+${versionCode} lista para compilar (mínima ${minimaVersionCode}).`);
+    if (process.env.GITHUB_OUTPUT) {
+      fs.appendFileSync(process.env.GITHUB_OUTPUT, `version_name=${versionName}\nversion_code=${versionCode}\n`);
+    }
     return;
   }
 

@@ -1,13 +1,20 @@
 import 'package:flutter/material.dart';
 
 import '../../api/administrador_api.dart';
+import '../../api/evidencias_multipart.dart' show maxEvidenciasCierre;
 import '../../api/gerente_api.dart';
+import '../../model/evidencia_adjunto_model.dart';
 import '../../model/compromiso_model.dart';
+import '../../service/evidencia_camara_service.dart';
 import '../../service/app_error.dart';
 import '../../service/app_feedback.dart';
 import '../../service/permission_service.dart';
 import '../../service/session_service.dart';
 import '../../service/theme.dart';
+import '../../utils/cronograma/cierre_utils.dart' show evidenciasDesdeArchivos;
+import '../../utils/pickers/galeria_evidencias.dart';
+import '../../utils/pickers/selected_upload_file.dart';
+import '../../widgets/evidencia_gallery.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class CompromisosPage extends StatefulWidget {
@@ -45,10 +52,12 @@ class _CompromisosPageState extends State<CompromisosPage> {
   List<CompromisoModel> _items = [];
   bool _loading = true;
   String? _adminId;
-  _CompromisoFilter _filter = _CompromisoFilter.todos;
+  _CompromisoFilter _filter = _CompromisoFilter.abiertos;
 
   bool get _canManage =>
       PermissionService.instance.can('compromisos.gestionar');
+  bool get _canSeguimiento =>
+      PermissionService.instance.can('compromisos.seguimiento.gestionar');
 
   @override
   void initState() {
@@ -117,28 +126,24 @@ class _CompromisosPageState extends State<CompromisosPage> {
     }
   }
 
-  Future<void> _toggle(CompromisoModel item, bool valor) async {
-    final old = item.completado;
-    setState(() {
-      item.completado = valor;
-    });
+  Future<void> _registrarSeguimiento(CompromisoModel item) async {
+    if (!_canSeguimiento || item.completado) return;
+    final draft = await showDialog<_SeguimientoDraft>(
+      context: context,
+      builder: (_) => _SeguimientoDialog(estadoInicial: item.estado),
+    );
+    if (draft == null) return;
     try {
-      final Map<String, dynamic> raw;
-      if (widget.usarFlujoAdministrador) {
-        _adminId ??= await _sessionService.getUserId();
-        raw = await _adminApi.actualizarPqrs(
-          adminId: _adminId!,
-          id: item.id,
-          completado: valor,
-        );
-      } else {
-        raw = await _api.actualizarCompromiso(id: item.id, completado: valor);
-      }
+      final raw = await _api.agregarSeguimientoCompromiso(
+        id: item.id,
+        estado: draft.estado,
+        observacion: draft.observacion,
+        evidencias: draft.evidencias,
+      );
       if (!mounted) return;
       setState(() => item.updateFrom(CompromisoModel.fromJson(raw)));
+      _snack('Se guardó el avance de la PQRS.');
     } catch (e) {
-      if (!mounted) return;
-      setState(() => item.completado = old);
       _snack(AppError.messageOf(e));
     }
   }
@@ -176,17 +181,7 @@ class _CompromisosPageState extends State<CompromisosPage> {
     final old = item.titulo;
     setState(() => item.titulo = nuevo);
     try {
-      final Map<String, dynamic> raw;
-      if (widget.usarFlujoAdministrador) {
-        _adminId ??= await _sessionService.getUserId();
-        raw = await _adminApi.actualizarPqrs(
-          adminId: _adminId!,
-          id: item.id,
-          titulo: nuevo,
-        );
-      } else {
-        raw = await _api.actualizarCompromiso(id: item.id, titulo: nuevo);
-      }
+      final raw = await _api.actualizarCompromiso(id: item.id, titulo: nuevo);
       if (!mounted) return;
       setState(() => item.updateFrom(CompromisoModel.fromJson(raw)));
     } catch (e) {
@@ -198,12 +193,7 @@ class _CompromisosPageState extends State<CompromisosPage> {
 
   Future<void> _eliminar(CompromisoModel item) async {
     try {
-      if (widget.usarFlujoAdministrador) {
-        _adminId ??= await _sessionService.getUserId();
-        await _adminApi.eliminarPqrs(adminId: _adminId!, id: item.id);
-      } else {
-        await _api.eliminarCompromiso(item.id);
-      }
+      await _api.eliminarCompromiso(item.id);
       if (!mounted) return;
       setState(() => _items.removeWhere((x) => x.id == item.id));
     } catch (e) {
@@ -355,7 +345,7 @@ class _CompromisosPageState extends State<CompromisosPage> {
                               setState(() => _filter = _CompromisoFilter.todos),
                         ),
                         _FilterChipButton(
-                          label: 'Abiertos',
+                          label: 'Activos',
                           selected: _filter == _CompromisoFilter.abiertos,
                           onTap: () => setState(
                             () => _filter = _CompromisoFilter.abiertos,
@@ -389,7 +379,7 @@ class _CompromisosPageState extends State<CompromisosPage> {
                               setState(() => _filter = _CompromisoFilter.rojos),
                         ),
                         _FilterChipButton(
-                          label: 'Cerrados',
+                          label: 'Completados',
                           selected: _filter == _CompromisoFilter.cerrados,
                           onTap: () => setState(
                             () => _filter = _CompromisoFilter.cerrados,
@@ -430,111 +420,248 @@ class _CompromisosPageState extends State<CompromisosPage> {
                                     color: ansColor.withValues(alpha: 0.24),
                                   ),
                                 ),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 6,
-                                  ),
-                                  child: Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Checkbox(
-                                        value: item.completado,
-                                        onChanged: _canManage
-                                            ? (v) => _toggle(item, v ?? false)
-                                            : null,
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 6,
                                       ),
-                                      Expanded(
-                                        child: InkWell(
-                                          onTap: _canManage
-                                              ? () => _editarTitulo(item)
-                                              : null,
-                                          child: Padding(
-                                            padding: const EdgeInsets.symmetric(
-                                              vertical: 10,
+                                      child: Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Padding(
+                                            padding: const EdgeInsets.fromLTRB(
+                                              12,
+                                              12,
+                                              4,
+                                              0,
                                             ),
-                                            child: Column(
+                                            child: Icon(
+                                              item.completado
+                                                  ? Icons.check_circle_rounded
+                                                  : Icons.assignment_outlined,
+                                              color: item.completado
+                                                  ? Colors.green
+                                                  : AppTheme.primary,
+                                            ),
+                                          ),
+                                          Expanded(
+                                            child: InkWell(
+                                              onTap:
+                                                  _canManage &&
+                                                      !widget
+                                                          .usarFlujoAdministrador
+                                                  ? () => _editarTitulo(item)
+                                                  : null,
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      vertical: 10,
+                                                    ),
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      item.titulo,
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        color: Colors.black87,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 8),
+                                                    Wrap(
+                                                      spacing: 8,
+                                                      runSpacing: 8,
+                                                      children: [
+                                                        if (!widget
+                                                            .usarFlujoAdministrador) ...[
+                                                          _MetaChip(
+                                                            icon: Icons
+                                                                .schedule_rounded,
+                                                            label: item
+                                                                .antiguedadLabel,
+                                                          ),
+                                                          _MetaChip(
+                                                            icon: Icons
+                                                                .event_available_outlined,
+                                                            label: item
+                                                                .fechaCreacionLabel,
+                                                          ),
+                                                        ],
+                                                        _MetaChip(
+                                                          icon: Icons
+                                                              .person_outline,
+                                                          label:
+                                                              item.autorLabel,
+                                                        ),
+                                                        _MetaChip(
+                                                          icon: Icons
+                                                              .track_changes_outlined,
+                                                          label:
+                                                              item.estadoLabel,
+                                                          color: item.completado
+                                                              ? Colors.green
+                                                              : AppTheme
+                                                                    .primary,
+                                                        ),
+                                                        _MetaChip(
+                                                          icon: item.completado
+                                                              ? Icons
+                                                                    .task_alt_outlined
+                                                              : Icons
+                                                                    .timelapse_rounded,
+                                                          label: item
+                                                              .fechaCierreLabel,
+                                                        ),
+                                                        if (!widget
+                                                            .usarFlujoAdministrador)
+                                                          _MetaChip(
+                                                            icon: Icons
+                                                                .flag_outlined,
+                                                            label:
+                                                                item.ansLabel,
+                                                            color: ansColor,
+                                                          ),
+                                                      ],
+                                                    ),
+                                                    if (item
+                                                            .actualizaciones
+                                                            .isNotEmpty &&
+                                                        (item
+                                                                    .actualizaciones
+                                                                    .last
+                                                                    .observacion ??
+                                                                '')
+                                                            .trim()
+                                                            .isNotEmpty) ...[
+                                                      const SizedBox(height: 8),
+                                                      Text(
+                                                        'Último avance: ${item.actualizaciones.last.observacion}',
+                                                        maxLines: 2,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        style: const TextStyle(
+                                                          color: Colors.black54,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                    if (item
+                                                            .actualizaciones
+                                                            .isNotEmpty &&
+                                                        item
+                                                            .actualizaciones
+                                                            .last
+                                                            .evidencias
+                                                            .isNotEmpty)
+                                                      Padding(
+                                                        padding:
+                                                            const EdgeInsets.only(
+                                                              top: 4,
+                                                            ),
+                                                        child: Text(
+                                                          '${item.actualizaciones.last.evidencias.length} evidencia(s) en el último avance',
+                                                          style:
+                                                              const TextStyle(
+                                                                color: Colors
+                                                                    .black54,
+                                                                fontSize: 12,
+                                                              ),
+                                                        ),
+                                                      ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          if (_canSeguimiento &&
+                                              !item.completado)
+                                            IconButton(
+                                              tooltip: 'Registrar avance',
+                                              onPressed: () =>
+                                                  _registrarSeguimiento(item),
+                                              icon: const Icon(
+                                                Icons.add_comment_outlined,
+                                              ),
+                                            ),
+                                          if (_canManage &&
+                                              !widget
+                                                  .usarFlujoAdministrador) ...[
+                                            IconButton(
+                                              tooltip: 'Editar',
+                                              onPressed: () =>
+                                                  _editarTitulo(item),
+                                              icon: const Icon(
+                                                Icons.edit_outlined,
+                                              ),
+                                            ),
+                                            if (!item.completado)
+                                              IconButton(
+                                                tooltip: 'Eliminar',
+                                                onPressed: () =>
+                                                    _eliminar(item),
+                                                icon: const Icon(
+                                                  Icons.delete_outline,
+                                                ),
+                                              ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                    if (item.actualizaciones.isNotEmpty)
+                                      ExpansionTile(
+                                        tilePadding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                        ),
+                                        title: Text(
+                                          'Historial (${item.actualizaciones.length})',
+                                        ),
+                                        children: item.actualizaciones.map((
+                                          actualizacion,
+                                        ) {
+                                          final fecha = actualizacion.creadaEn;
+                                          final fechaLabel = fecha == null
+                                              ? 'Fecha no disponible'
+                                              : '${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}/${fecha.year} ${fecha.hour.toString().padLeft(2, '0')}:${fecha.minute.toString().padLeft(2, '0')}';
+                                          return ListTile(
+                                            title: Text(
+                                              actualizacion.estadoLabel,
+                                            ),
+                                            subtitle: Column(
                                               crossAxisAlignment:
                                                   CrossAxisAlignment.start,
                                               children: [
                                                 Text(
-                                                  item.titulo,
-                                                  style: TextStyle(
-                                                    fontWeight: FontWeight.w600,
-                                                    color: item.completado
-                                                        ? Colors.black45
-                                                        : Colors.black87,
-                                                    decoration: item.completado
-                                                        ? TextDecoration
-                                                              .lineThrough
-                                                        : TextDecoration.none,
+                                                  '$fechaLabel · ${actualizacion.actorLabel}',
+                                                ),
+                                                if ((actualizacion
+                                                            .observacion ??
+                                                        '')
+                                                    .trim()
+                                                    .isNotEmpty) ...[
+                                                  const SizedBox(height: 6),
+                                                  Text(
+                                                    actualizacion.observacion!,
                                                   ),
-                                                ),
-                                                const SizedBox(height: 8),
-                                                Wrap(
-                                                  spacing: 8,
-                                                  runSpacing: 8,
-                                                  children: [
-                                                    if (!widget
-                                                        .usarFlujoAdministrador) ...[
-                                                      _MetaChip(
-                                                        icon: Icons
-                                                            .schedule_rounded,
-                                                        label: item
-                                                            .antiguedadLabel,
-                                                      ),
-                                                      _MetaChip(
-                                                        icon: Icons
-                                                            .event_available_outlined,
-                                                        label: item
-                                                            .fechaCreacionLabel,
-                                                      ),
-                                                    ],
-                                                    _MetaChip(
-                                                      icon:
-                                                          Icons.person_outline,
-                                                      label: item.autorLabel,
-                                                    ),
-                                                    _MetaChip(
-                                                      icon: item.completado
-                                                          ? Icons
-                                                                .task_alt_outlined
-                                                          : Icons
-                                                                .timelapse_rounded,
-                                                      label:
-                                                          item.fechaCierreLabel,
-                                                    ),
-                                                    if (!widget
-                                                        .usarFlujoAdministrador)
-                                                      _MetaChip(
-                                                        icon:
-                                                            Icons.flag_outlined,
-                                                        label: item.ansLabel,
-                                                        color: ansColor,
-                                                      ),
-                                                  ],
-                                                ),
+                                                ],
+                                                if (actualizacion
+                                                    .evidencias
+                                                    .isNotEmpty) ...[
+                                                  const SizedBox(height: 8),
+                                                  EvidenciaGallery(
+                                                    evidencias: actualizacion
+                                                        .evidencias,
+                                                  ),
+                                                ],
                                               ],
                                             ),
-                                          ),
-                                        ),
+                                          );
+                                        }).toList(),
                                       ),
-                                      if (_canManage) ...[
-                                        IconButton(
-                                          tooltip: 'Editar',
-                                          onPressed: () => _editarTitulo(item),
-                                          icon: const Icon(Icons.edit_outlined),
-                                        ),
-                                        IconButton(
-                                          tooltip: 'Eliminar',
-                                          onPressed: () => _eliminar(item),
-                                          icon: const Icon(
-                                            Icons.delete_outline,
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
+                                  ],
                                 ),
                               );
                             },
@@ -655,6 +782,210 @@ class _MetaChip extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _SeguimientoDraft {
+  const _SeguimientoDraft({
+    required this.estado,
+    required this.observacion,
+    required this.evidencias,
+  });
+
+  final String estado;
+  final String? observacion;
+  final List<EvidenciaAdjunto> evidencias;
+}
+
+class _SeguimientoDialog extends StatefulWidget {
+  const _SeguimientoDialog({required this.estadoInicial});
+
+  final String estadoInicial;
+
+  @override
+  State<_SeguimientoDialog> createState() => _SeguimientoDialogState();
+}
+
+class _SeguimientoDialogState extends State<_SeguimientoDialog> {
+  static const _estados = <String, String>{
+    'RECIBIDO': 'Recibido',
+    'EN_REVISION': 'En revisión',
+    'EN_PROCESO': 'En proceso',
+    'EN_ESPERA': 'En espera',
+    'CERRADO': 'Cerrado',
+  };
+
+  final _observacion = TextEditingController();
+  final List<EvidenciaAdjunto> _evidencias = [];
+  late String _estado;
+  bool _cargandoArchivo = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _estado = _estados.containsKey(widget.estadoInicial)
+        ? widget.estadoInicial
+        : 'RECIBIDO';
+  }
+
+  @override
+  void dispose() {
+    _observacion.dispose();
+    super.dispose();
+  }
+
+  void _agregarArchivos(List<SelectedUploadFile> archivos) {
+    final nuevos = evidenciasDesdeArchivos(archivos);
+    if (!mounted) return;
+    setState(() {
+      for (final evidencia in nuevos) {
+        if (_evidencias.length >= maxEvidenciasCierre) break;
+        _evidencias.add(evidencia);
+      }
+    });
+  }
+
+  Future<void> _tomarFoto() async {
+    setState(() => _cargandoArchivo = true);
+    try {
+      final foto = await EvidenciaCamara.tomarFoto();
+      if (foto != null) _agregarArchivos([foto]);
+    } finally {
+      if (mounted) setState(() => _cargandoArchivo = false);
+    }
+  }
+
+  Future<void> _elegirFotos() async {
+    final restantes = maxEvidenciasCierre - _evidencias.length;
+    if (restantes <= 0) return;
+    setState(() => _cargandoArchivo = true);
+    try {
+      final seleccionados = await GaleriaEvidencias.elegir(maximo: restantes);
+      if (seleccionados.isEmpty) return;
+      final preparados = await EvidenciaCamara.prepararDeGaleria(seleccionados);
+      _agregarArchivos(preparados);
+    } finally {
+      if (mounted) setState(() => _cargandoArchivo = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Registrar avance'),
+      content: SizedBox(
+        width: 460,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: _estado,
+                decoration: const InputDecoration(labelText: 'Estado'),
+                items: _estados.entries
+                    .map(
+                      (entry) => DropdownMenuItem(
+                        value: entry.key,
+                        child: Text(entry.value),
+                      ),
+                    )
+                    .toList(),
+                onChanged: _cargandoArchivo
+                    ? null
+                    : (value) {
+                        if (value != null) setState(() => _estado = value);
+                      },
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _observacion,
+                minLines: 2,
+                maxLines: 5,
+                maxLength: 2000,
+                decoration: const InputDecoration(
+                  labelText: 'Observación (opcional)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed:
+                        _cargandoArchivo ||
+                            _evidencias.length >= maxEvidenciasCierre
+                        ? null
+                        : _tomarFoto,
+                    icon: const Icon(Icons.camera_alt_outlined),
+                    label: const Text('Tomar foto'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed:
+                        _cargandoArchivo ||
+                            _evidencias.length >= maxEvidenciasCierre
+                        ? null
+                        : _elegirFotos,
+                    icon: const Icon(Icons.attach_file),
+                    label: const Text('Adjuntar'),
+                  ),
+                ],
+              ),
+              if (_cargandoArchivo) ...[
+                const SizedBox(height: 10),
+                const LinearProgressIndicator(),
+              ],
+              if (_evidencias.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                ..._evidencias.asMap().entries.map(
+                  (entry) => ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.image_outlined),
+                    title: Text(
+                      entry.value.nombre,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: IconButton(
+                      tooltip: 'Quitar evidencia',
+                      onPressed: _cargandoArchivo
+                          ? null
+                          : () =>
+                                setState(() => _evidencias.removeAt(entry.key)),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _cargandoArchivo ? null : () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed: _cargandoArchivo
+              ? null
+              : () => Navigator.pop(
+                  context,
+                  _SeguimientoDraft(
+                    estado: _estado,
+                    observacion: _observacion.text.trim().isEmpty
+                        ? null
+                        : _observacion.text.trim(),
+                    evidencias: List.unmodifiable(_evidencias),
+                  ),
+                ),
+          icon: const Icon(Icons.save_outlined),
+          label: const Text('Guardar avance'),
+        ),
+      ],
     );
   }
 }

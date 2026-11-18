@@ -72,11 +72,10 @@ class _UsuariosConjuntoPageState extends State<UsuariosConjuntoPage> {
           final conjunto = snapshot.data!;
           if (_vistaTabla) return _tabla(conjunto);
 
-          // ✅ FILTRAR: SOLO OPERARIOS ACTIVOS
-          // (Tu Operario dentro de Conjunto debe traer "activo")
-          final operariosActivos = conjunto.operarios
-              .where((o) => o.activo == true)
-              .toList();
+          // Cuando el conjunto tiene necesidades configuradas, sus titulares
+          // son la fuente actual de ocupación. La relación `operarios` se
+          // conserva como respaldo para conjuntos legados sin plazas.
+          final operariosActivos = _operariosActuales(conjunto);
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
@@ -152,11 +151,11 @@ class _UsuariosConjuntoPageState extends State<UsuariosConjuntoPage> {
                             style: TextStyle(color: Colors.grey),
                           )
                         else
-                          ...operariosActivos.map(
-                            (o) => ListTile(
+                          ...operariosActivos.entries.map(
+                            (entrada) => ListTile(
                               leading: const Icon(Icons.person),
-                              title: Text(o.nombre),
-                              subtitle: Text('CC: ${o.cedula}'),
+                              title: Text(entrada.value),
+                              subtitle: Text('CC: ${entrada.key}'),
                             ),
                           ),
                       ],
@@ -169,6 +168,24 @@ class _UsuariosConjuntoPageState extends State<UsuariosConjuntoPage> {
         },
       ),
     );
+  }
+
+  Map<String, String> _operariosActuales(Conjunto conjunto) {
+    final plazasActivas = conjunto.necesidades.where((n) => n.activo).toList();
+    if (conjunto.necesidades.isEmpty) {
+      return {
+        for (final operario in conjunto.operarios)
+          if (operario.activo) operario.cedula: operario.nombre,
+      };
+    }
+
+    final actuales = <String, String>{};
+    for (final plaza in plazasActivas) {
+      final id = plaza.operarioId;
+      if (id == null || id.isEmpty || plaza.operarioNombre == null) continue;
+      actuales.putIfAbsent(id, () => plaza.operarioNombre!);
+    }
+    return actuales;
   }
 
   Widget _selectorVista() {

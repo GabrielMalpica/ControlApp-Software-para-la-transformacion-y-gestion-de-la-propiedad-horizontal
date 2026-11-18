@@ -733,6 +733,7 @@ class _PreventivasPageState extends State<PreventivasPage> {
             nit: widget.nit,
             anio: anio,
             mes: mes,
+            conjuntoNombre: _conjunto?.nombre,
           ),
         ),
       );

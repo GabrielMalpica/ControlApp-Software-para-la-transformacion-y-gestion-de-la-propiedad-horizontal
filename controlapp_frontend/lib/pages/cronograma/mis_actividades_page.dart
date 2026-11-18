@@ -364,8 +364,15 @@ class _MisActividadesPageState extends State<MisActividadesPage> {
             .toList()
           ..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
 
-    var ahoraLista = abiertas
+    // "Ahora" son solo las que están en su horario; las de hoy cuya hora ya
+    // pasó sin cerrarse van aparte (antes se juntaban y la app decía "10 al
+    // mismo tiempo" con tareas de las 7:00, las 7:30, las 9:00...).
+    final empezadas = abiertas
         .where((t) => !t.fechaInicio.isAfter(ahora))
+        .toList();
+    var ahoraLista = empezadas.where((t) => t.fechaFin.isAfter(ahora)).toList();
+    final atrasadas = empezadas
+        .where((t) => !t.fechaFin.isAfter(ahora))
         .toList();
     var despues = abiertas.where((t) => t.fechaInicio.isAfter(ahora)).toList();
     var etiquetaAhora = 'Ahora';
@@ -437,6 +444,33 @@ class _MisActividadesPageState extends State<MisActividadesPage> {
                         ),
                       ),
                     for (final t in ahoraLista)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _TarjetaAhora(
+                          tarea: t,
+                          ahora: ahora,
+                          usuarioActualId: s?.usuarioId,
+                          puedeCerrar: _puedeCerrar(t),
+                          onCerrar: () => _cerrar(t),
+                          onAbrir: () => _abrir(t),
+                        ),
+                      ),
+                  ],
+                  if (atrasadas.isNotEmpty) ...[
+                    const SizedBox(height: 18),
+                    _TituloSeccion(
+                      icono: Icons.assignment_late_outlined,
+                      texto: 'Sin cerrar de hoy · ${atrasadas.length}',
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        'Ya pasó su hora. Ciérralas apenas puedas, aunque no '
+                        'tengas señal.',
+                        style: TextStyle(color: AppTheme.textMuted),
+                      ),
+                    ),
+                    for (final t in atrasadas)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 12),
                         child: _TarjetaAhora(

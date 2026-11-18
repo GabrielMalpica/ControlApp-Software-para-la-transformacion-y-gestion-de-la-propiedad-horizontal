@@ -45,6 +45,23 @@ class AppRouter {
     dashboard: (_) => const GerenteDashboardPage(),
   };
 
+  /// Pila inicial con una sola ruta. En la web Flutter arma la pila desde la
+  /// URL: al recargar en `/home-admin` (F5 o "Actualizar" de versión nueva)
+  /// quedaba `/` debajo, aparecía la flecha "atrás" y al tocarla la app se
+  /// quedaba en la pantalla de carga. Una ruta conocida se abre directo
+  /// (como antes, pero sin `/` debajo); una desconocida, por la de inicio,
+  /// que decide según la sesión.
+  static List<Route<dynamic>> rutasIniciales(String nombre) {
+    final rutas = routes;
+    final destino = rutas.containsKey(nombre) ? nombre : splash;
+    return <Route<dynamic>>[
+      MaterialPageRoute<void>(
+        settings: RouteSettings(name: destino),
+        builder: rutas[destino]!,
+      ),
+    ];
+  }
+
   static String routeForRole(String role) {
     switch (role) {
       case 'gerente':

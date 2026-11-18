@@ -97,6 +97,7 @@ class _MyAppState extends State<MyApp> {
       scaffoldMessengerKey: MyApp.scaffoldMessengerKey,
       navigatorKey: MyApp.navigatorKey,
       initialRoute: AppRouter.splash,
+      onGenerateInitialRoutes: AppRouter.rutasIniciales,
       routes: AppRouter.routes,
       builder: (context, child) => AvisoActualizacionApp(
         child: AvisoVersionNueva(child: child ?? const SizedBox.shrink()),

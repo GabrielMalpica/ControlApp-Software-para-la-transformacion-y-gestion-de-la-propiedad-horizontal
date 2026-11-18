@@ -249,6 +249,10 @@ class ConjuntoSelectorCard extends StatelessWidget {
                   Text(
                     conjuntoActual.nombre,
                     style: theme.textTheme.titleLarge,
+                    // Dos líneas: en celular los nombres largos ("CONDOMINIO
+                    // TORRES DE SALERNO 2") se cortaban justo en lo que
+                    // distingue un conjunto de otro.
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),

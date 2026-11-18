@@ -1,12 +1,15 @@
-# Compila la web y el APK de Android en la misma versión y los deja listos para
-# subir a Hostinger (ver docs/app-android-sin-conexion.md, "Publicar una
-# versión"). Se corre a mano: Actions → "App Android y web" → Run workflow.
+# Compila la web y el APK de Android en la misma versión y los publica en
+# Hostinger (ver docs/app-android-sin-conexion.md, "Publicar una versión").
+# Un clic: Actions → "App Android y web" → Run workflow. El versionCode se
+# calcula solo (el publicado + 1): no hay que editar pubspec.yaml.
 #
 # Secretos (Settings → Secrets and variables → Actions):
 #   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS,
 #   ANDROID_KEY_PASSWORD: llave de firma (obligatorios).
 #   HOSTINGER_FTP_SERVER, HOSTINGER_FTP_USER, HOSTINGER_FTP_PASSWORD,
-#   HOSTINGER_FTP_DIR: opcionales; con los cuatro, sube build/web solo.
+#   HOSTINGER_FTP_DIR: para publicar (obligatorios salvo que se desmarque
+#   "publicar"; sin ellos antes el run terminaba bien sin subir nada y el
+#   enlace de descarga de la web no funcionaba).
 # Variables opcionales: HOSTINGER_FTP_PROTOCOL (ftps por defecto; ftp si
 # Hostinger no acepta TLS) y HOSTINGER_FTP_SECURITY (strict por defecto; loose
 # si el certificado del FTP no coincide con el nombre del servidor).
@@ -34,6 +37,10 @@ on:
         type: string
         required: false
         default: ""
+      publicar:
+        description: Subir a Hostinger por FTP (desmarcar solo para compilar y descargar el artefacto)
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -56,6 +63,7 @@ jobs:
       DESCARGAS_BASE_URL: ${{ inputs.descargas_base_url }}
       MINIMA_VERSION_CODE: ${{ inputs.minima_version_code }}
       NOTAS: ${{ inputs.notas }}
+      PUBLICAR: ${{ inputs.publicar }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -114,27 +122,31 @@ jobs:
           for nombre in HOSTINGER_FTP_SERVER HOSTINGER_FTP_USER HOSTINGER_FTP_PASSWORD HOSTINGER_FTP_DIR; do
             if [[ -n "${!nombre:-}" ]]; then hay+=("$nombre"); else faltan+=("$nombre"); fi
           done
-          if (( ${#faltan[@]} == 0 )); then
-            if [[ "$HOSTINGER_FTP_DIR" != */ ]]; then
-              echo "::error::HOSTINGER_FTP_DIR debe terminar en / (por ejemplo public_html/)."
-              exit 1
-            fi
-            echo "configurado=true" >> "$GITHUB_OUTPUT"
-            echo "Se subirá build/web a Hostinger por FTP al final."
-          else
+          if [[ "$PUBLICAR" != "true" ]]; then
             echo "configurado=false" >> "$GITHUB_OUTPUT"
-            if (( ${#hay[@]} )); then
-              echo "::warning::Faltan ${faltan[*]}: no se subirá a Hostinger (hay que subir el artefacto a mano)."
-            else
-              echo "Sin secretos de FTP: el artefacto se sube a mano a Hostinger."
-            fi
+            echo "::notice::Solo compilar: el artefacto queda para subirlo a mano."
+            exit 0
           fi
+          if (( ${#faltan[@]} )); then
+            # Antes esto era un aviso y el run terminaba "bien" sin publicar
+            # nada: la web quedaba sin descargas/ y el enlace de la app volvía
+            # al inicio.
+            echo "::error::Faltan los secretos ${faltan[*]} para publicar en Hostinger (Settings → Secrets and variables → Actions; pasos en docs/app-android-sin-conexion.md). Para solo compilar, desmarca \"publicar\"."
+            exit 1
+          fi
+          if [[ "$HOSTINGER_FTP_DIR" != */ ]]; then
+            echo "::error::HOSTINGER_FTP_DIR debe terminar en / (por ejemplo public_html/)."
+            exit 1
+          fi
+          echo "configurado=true" >> "$GITHUB_OUTPUT"
+          echo "Se subirá build/web a Hostinger por FTP al final."
 
-      # Falla en un minuto, no después de compilar, si se olvidó subir el
-      # versionCode de pubspec.yaml.
-      - name: Revisar versión contra la publicada
+      # versionCode = el publicado + 1 (o el de pubspec.yaml si es mayor):
+      # los celulares solo se actualizan si el número sube.
+      - name: Calcular versión
+        id: version
         run: >-
-          node scripts/empaquetar-android.js --solo-revisar
+          node scripts/empaquetar-android.js --solo-revisar --auto-version
           --base-url "$DESCARGAS_BASE_URL"
           --minima "$MINIMA_VERSION_CODE"
           --anterior "${DESCARGAS_BASE_URL%/}/descargas/android.json"
@@ -168,7 +180,9 @@ jobs:
         run: node scripts/empaquetar-android.test.js
 
       - name: Compilar web
-        run: flutter build web --release --dart-define=API_BASE_URL="$API_BASE_URL"
+        env:
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+        run: flutter build web --release --build-number="$VERSION_CODE" --dart-define=API_BASE_URL="$API_BASE_URL"
 
       - name: Content-Security-Policy
         run: |
@@ -207,7 +221,9 @@ jobs:
           fi
 
       - name: Compilar APK
-        run: flutter build apk --release --dart-define=API_BASE_URL="$API_BASE_URL"
+        env:
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+        run: flutter build apk --release --build-number="$VERSION_CODE" --dart-define=API_BASE_URL="$API_BASE_URL"
 
       # Si Gradle no tomó key.properties firmaría con la llave de depuración, y
       # los celulares que la instalen no podrían actualizarse después.
@@ -232,8 +248,11 @@ jobs:
 
       - name: Empaquetar APK en build/web/descargas
         id: empaquetar
+        env:
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
         run: >-
           node scripts/empaquetar-android.js
+          --version-code "$VERSION_CODE"
           --base-url "$DESCARGAS_BASE_URL"
           --minima "$MINIMA_VERSION_CODE"
           --notas "$NOTAS"
@@ -249,6 +268,8 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      # Primero todo menos descargas/android.json: si la subida se corta, los
+      # celulares no ven una versión cuyo APK aún no está en el servidor.
       - name: Subir a Hostinger por FTP
         if: steps.ftp.outputs.configurado == 'true'
         uses: SamKirkland/FTP-Deploy-Action@110f9186c050f71550953127052e77650219c287 # v4.4.0
@@ -260,11 +281,60 @@ jobs:
           protocol: ${{ vars.HOSTINGER_FTP_PROTOCOL || 'ftps' }}
           security: ${{ vars.HOSTINGER_FTP_SECURITY || 'strict' }}
           local-dir: controlapp_frontend/build/web/
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            descargas/android.json
+
+      - name: Preparar manifiesto para subirlo de último
+        if: steps.ftp.outputs.configurado == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p build/publicar-manifiesto/descargas
+          cp build/web/descargas/android.json build/publicar-manifiesto/descargas/android.json
+
+      # Estado aparte: este paso solo conoce android.json y nunca borra lo
+      # que subió el paso anterior.
+      - name: Subir android.json (aviso de versión nueva)
+        if: steps.ftp.outputs.configurado == 'true'
+        uses: SamKirkland/FTP-Deploy-Action@110f9186c050f71550953127052e77650219c287 # v4.4.0
+        with:
+          server: ${{ secrets.HOSTINGER_FTP_SERVER }}
+          username: ${{ secrets.HOSTINGER_FTP_USER }}
+          password: ${{ secrets.HOSTINGER_FTP_PASSWORD }}
+          server-dir: ${{ secrets.HOSTINGER_FTP_DIR }}
+          protocol: ${{ vars.HOSTINGER_FTP_PROTOCOL || 'ftps' }}
+          security: ${{ vars.HOSTINGER_FTP_SECURITY || 'strict' }}
+          local-dir: controlapp_frontend/build/publicar-manifiesto/
+          state-name: .ftp-deploy-manifiesto.json
+
+      # Comprueba que lo publicado es lo que se acaba de compilar (el CDN de
+      # Hostinger puede tardar un poco: se reintenta).
+      - name: Comprobar la descarga publicada
+        if: steps.ftp.outputs.configurado == 'true'
+        env:
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+        run: |
+          set -euo pipefail
+          base="${DESCARGAS_BASE_URL%/}/descargas"
+          for intento in 1 2 3 4 5 6; do
+            publicado="$(curl -fsS -H 'Cache-Control: no-cache' "$base/android.json?v=$GITHUB_RUN_ID" | node -e 'let t="";process.stdin.on("data",d=>t+=d).on("end",()=>{try{console.log(JSON.parse(t).versionCode)}catch{console.log("")}})' || true)"
+            tipo="$(curl -fsSI "$base/controlapp.apk?v=$GITHUB_RUN_ID" | tr -d '\r' | awk -F': ' 'tolower($1)=="content-type"{print $2}' || true)"
+            if [[ "$publicado" == "$VERSION_CODE" && "$tipo" == application/vnd.android.package-archive* ]]; then
+              echo "Publicado: versionCode $publicado y controlapp.apk ($tipo)."
+              exit 0
+            fi
+            echo "Intento $intento: android.json=$publicado, controlapp.apk=$tipo; se reintenta en 20 s."
+            sleep 20
+          done
+          echo "::error::Hostinger no muestra la versión $VERSION_CODE en $base (android.json=$publicado, controlapp.apk=$tipo). Revisa HOSTINGER_FTP_DIR: debe ser la carpeta donde está index.html."
+          exit 1
 
       - name: Resumen
         if: steps.empaquetar.outcome == 'success'
         env:
-          SUBIDO: "${{ steps.ftp.outputs.configurado == 'true' && 'sí, por FTP' || 'no, descargar el artefacto y subirlo a mano' }}"
+          SUBIDO: "${{ steps.ftp.outputs.configurado == 'true' && 'sí, por FTP (comprobado)' || 'no, descargar el artefacto y subirlo a mano' }}"
         run: |
           set -euo pipefail
           node -e '

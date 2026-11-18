@@ -19,6 +19,7 @@ import '../service/tarea_labels.dart';
 import '../service/theme.dart';
 import '../utils/duration_format.dart';
 import '../utils/schedule_utils.dart';
+import '../utils/cronograma/vistas_cronograma.dart';
 import '../widgets/section_card.dart';
 import '../widgets/searchable_select_field.dart';
 import '../widgets/cronograma/impacto_especial_dialog.dart';
@@ -115,6 +116,12 @@ class CorrectivaSchedulerForm extends StatefulWidget {
   /// (se devuelve con el mismo `localId` para reemplazarla).
   final ActividadEspecialPendiente? pendienteInicial;
 
+  /// Atajo "Reemplazar con correctiva" desde el detalle de una tarea: la
+  /// nueva actividad usa el mismo horario y operarios de esta tarea (no se
+  /// pueden cambiar aquí; para otro horario u operarios se crea aparte y se
+  /// arrastra). Solo en modo pendiente, junto con [pendienteInicial].
+  final TareaModel? reemplazaA;
+
   const CorrectivaSchedulerForm({
     super.key,
     required this.nit,
@@ -125,6 +132,7 @@ class CorrectivaSchedulerForm extends StatefulWidget {
     this.existingTask,
     this.onPendienteCreada,
     this.pendienteInicial,
+    this.reemplazaA,
   });
 
   @override
@@ -136,6 +144,68 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
   final _formKey = GlobalKey<FormState>();
 
   bool get _modoPendiente => widget.onPendienteCreada != null;
+
+  /// Reemplazo directo de una tarea: duración y operarios fijos.
+  bool get _fijo => _modoPendiente && widget.reemplazaA != null;
+
+  Widget _avisoReemplazo() {
+    final t = widget.reemplazaA!;
+    final ini = t.fechaInicio.toLocal();
+    final fin = t.fechaFin.toLocal();
+    final dia = diaCorto(ini);
+    final ops = t.operariosNombres
+        .map(nombreCortoOperario)
+        .where((n) => n.isNotEmpty)
+        .join(', ');
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F0FF),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFD9CCFB)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.swap_horiz, color: Color(0xFF6D28D9)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Reemplaza a: ${lugarDe(t)}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF4C1D95),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${dia[0].toUpperCase()}${dia.substring(1)} ${ini.day} '
+                  '${mesCorto(ini.month)} · ${hhmm(ini)}–${hhmm(fin)}'
+                  '${ops.isEmpty ? '' : ' · $ops'}',
+                  style: const TextStyle(color: Color(0xFF4C1D95)),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Se usa el mismo horario y los mismos operarios. Al guardar '
+                  'verás qué se reemplaza antes de confirmar. Para otro horario '
+                  'u otros operarios usa "Nueva ${etiquetaCorrectiva(minuscula: true)}" '
+                  'y arrástrala en Planeación.',
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: Color(0xFF6D28D9),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   // APIs
   final TareaApi _tareaApi = TareaApi();
@@ -2502,6 +2572,7 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (_fijo) _avisoReemplazo(),
           SectionCard(
             title: '1. Dónde se realizará',
             subtitle: widget.embedded
@@ -2611,7 +2682,9 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
           const SizedBox(height: 24),
           SectionCard(
             title: '2. Qué se va a hacer',
-            subtitle: _modoPendiente
+            subtitle: _fijo
+                ? 'Define la descripción, prioridad y observaciones. El horario es el de la tarea que reemplaza.'
+                : _modoPendiente
                 ? 'Define la descripcion, prioridad, duración y observaciones. Elegirás dónde ubicarla arrastrándola en el cronograma.'
                 : 'Define la descripcion, prioridad, horario y observaciones de la tarea.',
             child: Column(
@@ -2696,9 +2769,16 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
                 TextFormField(
                   controller: _duracionCtrl,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
+                  readOnly: _fijo,
+                  decoration: InputDecoration(
                     labelText: "Duración estimada (minutos)",
-                    border: OutlineInputBorder(),
+                    border: const OutlineInputBorder(),
+                    helperText: _fijo
+                        ? 'La misma de la tarea que reemplaza'
+                        : null,
+                    suffixIcon: _fijo
+                        ? const Icon(Icons.lock_outline, size: 18)
+                        : null,
                   ),
                   validator: (v) {
                     if (v == null || v.trim().isEmpty) {
@@ -2728,11 +2808,17 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
             child: Column(
               children: [
                 InkWell(
-                  onTap: _mostrarSelectorOperarios,
+                  onTap: _fijo ? null : _mostrarSelectorOperarios,
                   child: InputDecorator(
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: "Operarios",
-                      border: OutlineInputBorder(),
+                      border: const OutlineInputBorder(),
+                      helperText: _fijo
+                          ? 'Los mismos de la tarea que reemplaza'
+                          : null,
+                      suffixIcon: _fijo
+                          ? const Icon(Icons.lock_outline, size: 18)
+                          : null,
                     ),
                     child: Text(
                       _operariosSeleccionadosIds.isEmpty
@@ -2836,6 +2922,8 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
             label: Text(
               _guardando
                   ? "Guardando..."
+                  : _fijo
+                  ? "Guardar y reemplazar"
                   : widget.existingTask != null ||
                         widget.pendienteInicial != null
                   ? "Guardar cambios"
