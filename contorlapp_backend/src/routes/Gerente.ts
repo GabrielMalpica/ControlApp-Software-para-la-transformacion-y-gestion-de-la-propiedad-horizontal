@@ -7,6 +7,7 @@ import { authRequired } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/permission.middleware";
 import { requireRoles } from "../middlewares/role.middleware";
 import { PermissionService } from "../services/PermissionService";
+import { uploadEvidencias } from "../middlewares/upload_evidencias";
 import {
   requireConjuntoScope,
   requireResourceScope,
@@ -224,12 +225,22 @@ router.get(
 );
 router.patch(
   "/compromisos/:id",
+  requireRoles("gerente", "jefe_operaciones", "supervisor"),
   requirePermission("compromisos.gestionar"),
   requireResourceScope("compromiso", "id"),
   compromisosCtrl.actualizar,
 );
+router.post(
+  "/compromisos/:id/actualizaciones",
+  requireRoles("gerente", "jefe_operaciones"),
+  requirePermission("compromisos.seguimiento.gestionar"),
+  requireResourceScope("compromiso", "id"),
+  ...uploadEvidencias.array("files", 10),
+  compromisosCtrl.agregarSeguimiento,
+);
 router.delete(
   "/compromisos/:id",
+  requireRoles("gerente", "jefe_operaciones", "supervisor"),
   requirePermission("compromisos.gestionar"),
   requireResourceScope("compromiso", "id"),
   compromisosCtrl.eliminar,

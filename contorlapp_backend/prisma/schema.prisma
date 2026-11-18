@@ -627,6 +627,7 @@ model Usuario {
   administrador       Administrador?
   residente           Residente?
   compromisosCreados  CompromisoConjunto[]       @relation("CompromisoCreadoPor")
+  actualizacionesCompromiso CompromisoActualizacion[] @relation("CompromisoActualizacionActor")
   pedidos             PedidoApp[]
   movimientosPuntos   MovimientoPuntos[]
   cambiosEstadoPedido PedidoAppEstadoHistorico[] @relation("PedidoEstadoCambiadoPor")
@@ -1139,6 +1140,7 @@ model CompromisoConjunto {
 
   titulo     String
   completado Boolean @default(false)
+  estado     String  @default("RECIBIDO")
 
   creadoPor   Usuario? @relation("CompromisoCreadoPor", fields: [creadoPorId], references: [id], onDelete: SetNull)
   creadoPorId String?
@@ -1146,10 +1148,26 @@ model CompromisoConjunto {
   creadaEn      DateTime  @default(now())
   cerradaEn     DateTime?
   actualizadaEn DateTime  @updatedAt
+  actualizaciones CompromisoActualizacion[]
 
   @@index([conjuntoId, completado])
   @@index([conjuntoId, creadaEn])
   @@map("CompromisoConjunto")
+}
+
+model CompromisoActualizacion {
+  id           Int               @id @default(autoincrement())
+  compromisoId Int
+  compromiso   CompromisoConjunto @relation(fields: [compromisoId], references: [id], onDelete: Cascade)
+  estado       String
+  observacion  String?
+  evidencias   String[]          @default([])
+  actorId      String?
+  actor        Usuario?          @relation("CompromisoActualizacionActor", fields: [actorId], references: [id], onDelete: SetNull)
+  creadaEn     DateTime          @default(now())
+
+  @@index([compromisoId, creadaEn])
+  @@index([actorId])
 }
 
 model ConjuntoHorario {

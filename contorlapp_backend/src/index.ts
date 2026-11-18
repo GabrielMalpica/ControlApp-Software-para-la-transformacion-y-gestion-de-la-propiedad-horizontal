@@ -666,7 +666,9 @@ const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
 app.use(errorHandler);
 
 /* ------------------------------- levantar server -------------------------- */
-const PORT = Number(process.env.PORT) || 3000;
+// En local escucha en el 4000 (el 3000 suele estar ocupado en el PC de
+// desarrollo); en Railway siempre llega PORT.
+const PORT = Number(process.env.PORT) || 4000;
 const HOST = process.env.HOST || "0.0.0.0";
 (async () => {
   try {

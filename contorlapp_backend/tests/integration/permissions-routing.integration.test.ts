@@ -25,6 +25,7 @@ jest.mock("../../src/controller/CompromisoConjuntoController", () => ({
     listarGlobal: (_req: any, res: any) => res.json([]),
     crear: (_req: any, res: any) => res.status(201).json({}),
     actualizar: (_req: any, res: any) => res.json({}),
+    agregarSeguimiento: (_req: any, res: any) => res.json({}),
     eliminar: (_req: any, res: any) => res.json({ ok: true }),
   })),
 }));

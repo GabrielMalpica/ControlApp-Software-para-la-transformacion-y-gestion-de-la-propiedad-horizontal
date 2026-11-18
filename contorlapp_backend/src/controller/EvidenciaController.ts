@@ -35,7 +35,7 @@ export class EvidenciaController {
   };
 
   // GET /evidencias/:fileId
-  // Solo si el archivo es de una tarea, diagnóstico o comprobante que el
+  // Solo si el archivo es de una tarea, diagnóstico, PQRS o comprobante que el
   // usuario ya puede ver; si no, 404 sin confirmar que existe.
   obtener: RequestHandler = async (req, res, next) => {
     try {

@@ -18,6 +18,7 @@ export type ActorEvidencia = { id: string; rol: string; empresaId: string };
 export type DuenosEvidencia = {
   tareas: Array<{ id: number; conjuntoId: string | null }>;
   diagnosticos: Array<{ id: number; conjuntoId: string }>;
+  compromisos: Array<{ id: number; conjuntoId: string }>;
   pedidos: Array<{
     id: number;
     tipo: TipoPedidoApp;
@@ -48,6 +49,7 @@ export const MENSAJE_EVIDENCIA_NO_DISPONIBLE = "No se pudo obtener la evidencia.
 // corrige un cierre.
 const PERMISOS_VER_TAREAS = ["tareas.ver", "cronograma.ver", "reportes.ver"];
 const PERMISOS_PLAN_ESPERANZA = ["plan_esperanza.acceso"];
+const PERMISOS_COMPROMISOS = ["compromisos.ver"];
 const PERMISOS_PEDIDOS = ["comercio.pedidos.ver"];
 
 // Lo que se encuentra para un archivo casi nunca cambia: solo se pierde si se
@@ -116,7 +118,7 @@ type Pendiente = {
 
 /**
  * Autoriza `GET /evidencias/:fileId`: el archivo se sirve solo si lo guarda
- * una entidad (tarea, diagnóstico del Plan Esperanza o comprobante de pago)
+ * una entidad (tarea, diagnóstico del Plan Esperanza, PQRS o comprobante)
  * que el actor ya puede ver por su propia pantalla. Cualquier otro caso
  * -id desconocido, de otra entidad o documento de la página web, que tiene su
  * propia ruta con permiso- responde 404, sin confirmar que el archivo existe.
@@ -150,6 +152,7 @@ export class EvidenciaAccesoService {
     const duenos = await this.duenos(fileId);
     if (await this.puedeVerAlgunaTarea(duenos.tareas, actor)) return;
     if (await this.puedeVerAlgunDiagnostico(duenos.diagnosticos, actor)) return;
+    if (await this.puedeVerAlgunCompromiso(duenos.compromisos, actor)) return;
     if (await this.puedeVerAlgunPedido(duenos.pedidos, actor)) return;
     throw noDisponible();
   }
@@ -164,6 +167,7 @@ export class EvidenciaAccesoService {
     const vacio =
       !encontrados.tareas.length &&
       !encontrados.diagnosticos.length &&
+      !encontrados.compromisos.length &&
       !encontrados.pedidos.length;
     await this.cache.set(clave, encontrados, vacio ? TTL_SIN_DUENO_S : TTL_DUENOS_S);
     return encontrados;
@@ -198,7 +202,7 @@ export class EvidenciaAccesoService {
     try {
       const resultado = await this.buscarDuenos([...lote.keys()]);
       for (const [fileId, pendientes] of lote) {
-        const duenos = resultado.get(fileId) ?? { tareas: [], diagnosticos: [], pedidos: [] };
+        const duenos = resultado.get(fileId) ?? { tareas: [], diagnosticos: [], compromisos: [], pedidos: [] };
         for (const p of pendientes) p.resolve(duenos);
       }
     } catch (error) {
@@ -209,7 +213,7 @@ export class EvidenciaAccesoService {
   }
 
   /**
-   * Busca los archivos en las tres entidades que guardan enlaces de Drive
+   * Busca los archivos en las entidades que guardan enlaces de Drive
    * servidos por `/evidencias/`. El filtro SQL solo preselecciona por texto;
    * la coincidencia exacta se comprueba con `idsDriveEnTexto`, así un id que
    * es parte de otro no cuenta.
@@ -220,14 +224,14 @@ export class EvidenciaAccesoService {
     const de = (fileId: string) => {
       let d = resultado.get(fileId);
       if (!d) {
-        d = { tareas: [], diagnosticos: [], pedidos: [] };
+        d = { tareas: [], diagnosticos: [], compromisos: [], pedidos: [] };
         resultado.set(fileId, d);
       }
       return d;
     };
     const limite = fileIds.length * MAX_FILAS_POR_ARCHIVO;
 
-    const [tareas, diagnosticos, pedidos] = await Promise.all([
+    const [tareas, diagnosticos, compromisos, pedidos] = await Promise.all([
       this.prisma.$queryRaw<Array<{ id: number; conjuntoId: string | null; evidencias: string[] }>>`
         SELECT t."id", t."conjuntoId", t."evidencias"
         FROM "Tarea" t
@@ -238,6 +242,19 @@ export class EvidenciaAccesoService {
       this.prisma.diagnosticoArea.findMany({
         where: { OR: fileIds.map((fileId) => ({ urlFoto: { contains: fileId } })) },
         select: { id: true, urlFoto: true, planEsperanza: { select: { conjuntoId: true } } },
+        take: limite,
+      }),
+      this.prisma.compromisoActualizacion.findMany({
+        where: {
+          OR: fileIds.map((fileId) => ({
+            evidencias: { has: `https://drive.google.com/file/d/${fileId}/view` },
+          })),
+        },
+        select: {
+          id: true,
+          evidencias: true,
+          compromiso: { select: { conjuntoId: true } },
+        },
         take: limite,
       }),
       this.prisma.pedidoApp.findMany({
@@ -257,6 +274,13 @@ export class EvidenciaAccesoService {
       for (const fileId of idsDriveEnTexto(d.urlFoto)) {
         if (!solicitados.has(fileId)) continue;
         de(fileId).diagnosticos.push({ id: d.id, conjuntoId: d.planEsperanza.conjuntoId });
+      }
+    }
+    for (const c of compromisos) {
+      const ids = new Set((c.evidencias ?? []).flatMap((e) => idsDriveEnTexto(e)));
+      for (const fileId of ids) {
+        if (!solicitados.has(fileId)) continue;
+        de(fileId).compromisos.push({ id: c.id, conjuntoId: c.compromiso.conjuntoId });
       }
     }
     for (const p of pedidos) {
@@ -345,6 +369,16 @@ export class EvidenciaAccesoService {
     if (!diagnosticos.length || actor.rol === Rol.residente) return false;
     if (!(await this.tienePermiso(actor, PERMISOS_PLAN_ESPERANZA))) return false;
     return this.alcanzaConjunto([...new Set(diagnosticos.map((d) => d.conjuntoId))], actor);
+  }
+
+  /** Evidencias de PQRS: mismo permiso y alcance de la pantalla del conjunto. */
+  private async puedeVerAlgunCompromiso(
+    compromisos: DuenosEvidencia["compromisos"],
+    actor: ActorEvidencia,
+  ): Promise<boolean> {
+    if (!compromisos.length) return false;
+    if (!(await this.tienePermiso(actor, PERMISOS_COMPROMISOS))) return false;
+    return this.alcanzaConjunto([...new Set(compromisos.map((c) => c.conjuntoId))], actor);
   }
 
   /**

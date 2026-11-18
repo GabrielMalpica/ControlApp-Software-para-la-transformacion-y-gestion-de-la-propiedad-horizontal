@@ -15,7 +15,8 @@ router.get("/direccion", controller.direccion);
 // GET /evidencias/:fileId -> streamea el binario de una evidencia desde Drive.
 // El controller la sirve solo si el archivo es de una tarea, diagnóstico del
 // Plan Esperanza o comprobante que el usuario puede ver (EvidenciaAccesoService);
-// los documentos de la página web van por /commerce/web/archivos/:fileId.
+// PQRS también respeta el alcance del conjunto; documentos web van por
+// /commerce/web/archivos/:fileId.
 router.get("/:fileId", controller.obtener);
 
 export default router;

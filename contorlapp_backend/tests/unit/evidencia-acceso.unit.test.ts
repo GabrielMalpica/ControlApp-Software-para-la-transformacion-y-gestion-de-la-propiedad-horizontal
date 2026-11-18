@@ -29,6 +29,7 @@ const ID_TAREA_C2 = "1Tarea_conjunto2_admin_otro_zzzzz";
 const ID_TAREA_OTRA_EMPRESA = "1Tarea_otra_empresa_____________w";
 const ID_DIAGNOSTICO = "1Diagnostico_plan_conjunto1_aaaaa";
 const ID_COMPROBANTE = "1Comprobante_residente_r1_bbbbbbb";
+const ID_PQRS = "1Pqrs_conjunto1_evidencia_ddddddd";
 const ID_POSTULACION = "1Postulacion_web_cedula_ccccccccc";
 
 const drive = (id: string) => `https://drive.google.com/file/d/${id}/view`;
@@ -64,6 +65,9 @@ function crearDb() {
       comprobanteUrl: drive(ID_COMPROBANTE),
     },
   ];
+  const actualizacionesCompromiso = [
+    { id: 30, evidencias: [drive(ID_PQRS)], compromiso: { conjuntoId: "C1" } },
+  ];
   const usuarios: Record<string, { rol: Rol; empresaId?: string; conjuntoId?: string }> = {
     "gerente-1": { rol: Rol.gerente, empresaId: "E1" },
     "jefe-1": { rol: Rol.jefe_operaciones, empresaId: "E1" },
@@ -98,6 +102,13 @@ function crearDb() {
       findMany: jest.fn(async ({ where }: any) =>
         pedidos.filter((p) =>
           where.OR.some((o: any) => p.comprobanteUrl?.includes(o.comprobanteUrl.contains)),
+        ),
+      ),
+    },
+    compromisoActualizacion: {
+      findMany: jest.fn(async ({ where }: any) =>
+        actualizacionesCompromiso.filter((a) =>
+          where.OR.some((o: any) => a.evidencias.includes(o.evidencias.has)),
         ),
       ),
     },
@@ -255,6 +266,14 @@ describe("EvidenciaAccesoService: evidencias de tareas", () => {
 });
 
 describe("EvidenciaAccesoService: otros dueños y archivos sin dueño", () => {
+  test("evidencia PQRS: gerente y administrador del conjunto; fuera de alcance -> 404", async () => {
+    const { service } = crearServicio();
+    await expect(service.autorizar(ID_PQRS, actor("gerente-1", Rol.gerente))).resolves.toBeUndefined();
+    await expect(service.autorizar(ID_PQRS, actor("admin-1", Rol.administrador))).resolves.toBeUndefined();
+    await esperar404(service.autorizar(ID_PQRS, actor("admin-2", Rol.administrador)));
+    await esperar404(service.autorizar(ID_PQRS, actor("gerente-x", Rol.gerente, "E2")));
+  });
+
   test("un documento de postulación web no se sirve por /evidencias -> 404 (ni al gerente)", async () => {
     const { service, db } = crearServicio();
     await esperar404(service.autorizar(ID_POSTULACION, actor("gerente-1", Rol.gerente)));
@@ -337,7 +356,7 @@ describe("EvidenciaAccesoService: rendimiento", () => {
     await service.autorizar(ID_TAREA, actor("admin-1", Rol.administrador));
     expect(db.$queryRaw).toHaveBeenCalledTimes(1);
     expect(cache.datos.get(`evidencia:duenos:v1:${ID_TAREA}`)).toEqual({
-      valor: { tareas: [{ id: 1, conjuntoId: "C1" }], diagnosticos: [], pedidos: [] },
+      valor: { tareas: [{ id: 1, conjuntoId: "C1" }], diagnosticos: [], compromisos: [], pedidos: [] },
       ttl: 600,
     });
     await esperar404(service.autorizar(ID_POSTULACION, actor("gerente-1", Rol.gerente)));

@@ -88,6 +88,7 @@ export async function listarCompromisos(prisma: PrismaClient, ctx: ContextoAccio
     compromisoId: c.id,
     conjunto: c.conjunto?.nombre ?? c.conjuntoNombre ?? c.conjuntoId ?? null,
     textoLibre_titulo: c.titulo,
+    estado: c.estado ?? (c.completado ? "CERRADO" : "RECIBIDO"),
     completado: Boolean(c.completado),
     creadoEn: c.creadaEn ?? null,
     ans: c.ansEstado ?? null,

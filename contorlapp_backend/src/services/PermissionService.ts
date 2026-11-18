@@ -326,6 +326,13 @@ const PERMISSION_CATALOG: PermissionDefinition[] = [
     description: "Permite crear, editar o eliminar compromisos o PQRS.",
   },
   {
+    key: "compromisos.seguimiento.gestionar",
+    module: "compromisos",
+    moduleLabel: "Compromisos y PQRS",
+    label: "Actualizar seguimiento de PQRS",
+    description: "Permite a gerentes y jefes de operaciones registrar avances, estados y evidencias de PQRS.",
+  },
+  {
     key: "compromisos.globales_ver",
     module: "compromisos",
     moduleLabel: "Compromisos y PQRS",
@@ -614,6 +621,7 @@ const DEFAULT_PERMISSIONS_BY_ROLE: Record<Rol, Set<string>> = {
     "mapa_areas.gestionar",
     "compromisos.ver",
     "compromisos.gestionar",
+    "compromisos.seguimiento.gestionar",
     "compromisos.globales_ver",
     "cumpleanos.ver",
     "asistencia.ver",

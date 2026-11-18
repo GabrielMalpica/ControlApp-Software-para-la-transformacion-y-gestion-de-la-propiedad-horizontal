@@ -30,8 +30,6 @@ router.get(
 );
 router.get("/:adminId/conjuntos/:conjuntoId/compromisos", requirePermission("compromisos.ver"), requireConjuntoScope("conjuntoId"), controller.listarCompromisosConjunto);
 router.post("/:adminId/conjuntos/:conjuntoId/compromisos", requirePermission("compromisos.gestionar"), requireConjuntoScope("conjuntoId"), controller.crearCompromisoConjunto);
-router.patch("/:adminId/compromisos/:id", requirePermission("compromisos.gestionar"), requireResourceScope("compromiso", "id"), controller.actualizarCompromiso);
-router.delete("/:adminId/compromisos/:id", requirePermission("compromisos.gestionar"), requireResourceScope("compromiso", "id"), controller.eliminarCompromiso);
 
 // Solicitudes
 router.post("/:adminId/solicitudes/tarea", requirePermission("solicitudes.crear"), requireBodyConjuntoScope(), controller.solicitarTarea);

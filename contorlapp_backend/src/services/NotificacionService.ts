@@ -567,6 +567,49 @@ export class NotificacionService {
     });
   }
 
+  async notificarActualizacionPqrs(input: {
+    compromisoId: number;
+    conjuntoId: string;
+    titulo: string;
+    estado: string;
+    actorId: string;
+  }): Promise<void> {
+    const [actor, conjunto] = await Promise.all([
+      this.db.usuario.findUnique({
+        where: { id: input.actorId },
+        select: { nombre: true },
+      }),
+      this.db.conjunto.findUnique({
+        where: { nit: input.conjuntoId },
+        select: { nombre: true, administradorId: true },
+      }),
+    ]);
+    if (!conjunto?.administradorId || conjunto.administradorId === input.actorId) return;
+
+    const estadoLabel: Record<string, string> = {
+      RECIBIDO: "Recibido",
+      EN_REVISION: "En revisión",
+      EN_PROCESO: "En proceso",
+      EN_ESPERA: "En espera",
+      CERRADO: "Cerrado",
+    };
+    const nombreActor = actor?.nombre?.trim() || "El equipo de operaciones";
+    const nombreConjunto = conjunto.nombre?.trim() || input.conjuntoId;
+    await this.crearParaUsuarios({
+      usuarioIds: [conjunto.administradorId],
+      tipo: "PQRS_ACTUALIZADA",
+      titulo: "Actualización de PQRS",
+      mensaje: `${nombreActor} actualizó la PQRS "${input.titulo}" de ${nombreConjunto}: ${estadoLabel[input.estado] ?? input.estado}.`,
+      referenciaTipo: "COMPROMISO_CONJUNTO",
+      referenciaId: input.compromisoId,
+      data: {
+        compromisoId: input.compromisoId,
+        conjuntoId: input.conjuntoId,
+        estado: input.estado,
+      },
+    });
+  }
+
   private parseData(value: unknown): JsonMap | null {
     if (value == null) return null;
     if (typeof value === "object" && !Array.isArray(value)) {
