@@ -6,9 +6,10 @@
 // docs/mcp/MCP_INTEGRATION_GUIDELINES.md.
 import { herramientasCambio } from "./herramientas/cambios";
 import { herramientasConsulta } from "./herramientas/consultas";
+import { herramientasPlanEsperanza } from "./herramientas/planEsperanza";
 import type { DefinicionHerramienta } from "./herramientas/tipos";
 
-export const HERRAMIENTAS: DefinicionHerramienta[] = [...herramientasConsulta, ...herramientasCambio];
+export const HERRAMIENTAS: DefinicionHerramienta[] = [...herramientasConsulta, ...herramientasCambio, ...herramientasPlanEsperanza];
 
 /**
  * Nombres que nunca deben existir como herramientas: eliminar, cambiar
@@ -42,7 +43,7 @@ export const DECISIONES_POR_MODULO: Record<string, DecisionModulo> = {
   reportes: { expuesto: true, motivo: "Indicadores de tareas. El PDF detallado queda en la app (costo y datos internos)." },
   cumpleanos: { expuesto: false, motivo: "Dato personal sin valor operativo para la IA." },
   residentes: { expuesto: false, motivo: "Datos personales de residentes: nunca por MCP." },
-  plan_esperanza: { expuesto: false, motivo: "Diagnósticos con fotos: solo en la app." },
+  plan_esperanza: { expuesto: true, motivo: "Consulta de cronología y captura de fases con confirmación, alcance por conjunto y evidencia fotográfica minimizada." },
   asistencia: { expuesto: true, motivo: "Lectura y novedades manuales. El marcaje por QR es presencial y nunca se automatiza." },
   comercio: { expuesto: false, motivo: "Pedidos, pagos y mora: fuera del MCP." },
   web: { expuesto: false, motivo: "Postulaciones con documentos de identidad: nunca por MCP." },

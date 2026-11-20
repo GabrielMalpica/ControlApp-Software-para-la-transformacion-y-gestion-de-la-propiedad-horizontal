@@ -1128,6 +1128,7 @@ model Conjunto {
   // Plan Esperanza
   planEsperanzaConfig PlanEsperanzaConfig?
   planesEsperanza     PlanEsperanza[]
+  ciclosPlanEsperanza PlanEsperanzaCiclo[]
 
   @@index([empresaId])
 }
@@ -3026,6 +3027,11 @@ model PlanEsperanza {
   id           Int               @id @default(autoincrement())
   conjunto     Conjunto          @relation(fields: [conjuntoId], references: [nit], onDelete: Cascade)
   conjuntoId   String
+  ciclo        PlanEsperanzaCiclo? @relation(fields: [cicloId], references: [id], onDelete: Cascade)
+  cicloId      Int?
+  faseClave    String?
+  mesObjetivo  Int?
+  fechaProgramada DateTime?
   fechaInicio  DateTime          @default(now())
   fechaFin     DateTime?
   completado   Boolean           @default(false)
@@ -3034,7 +3040,25 @@ model PlanEsperanza {
 
   @@index([conjuntoId, completado])
   @@index([conjuntoId, fechaInicio])
+  @@index([cicloId, fechaProgramada])
+  @@unique([cicloId, faseClave])
   @@map("PlanEsperanza")
+}
+
+model PlanEsperanzaCiclo {
+  id                  Int            @id @default(autoincrement())
+  conjunto            Conjunto       @relation(fields: [conjuntoId], references: [nit], onDelete: Cascade)
+  conjuntoId          String
+  fechaInicioContrato DateTime
+  fechaFinContrato    DateTime
+  fechaInicio         DateTime
+  fechaFin            DateTime
+  creadoEn            DateTime       @default(now())
+  fases               PlanEsperanza[]
+
+  @@unique([conjuntoId, fechaInicio])
+  @@index([conjuntoId, fechaFin])
+  @@map("PlanEsperanzaCiclo")
 }
 
 model DiagnosticoArea {

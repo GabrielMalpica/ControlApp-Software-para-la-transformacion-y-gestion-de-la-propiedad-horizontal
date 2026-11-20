@@ -40,7 +40,9 @@ export function redactar(valor: unknown, profundidad = 0): unknown {
     return Object.fromEntries(
       Object.entries(valor as Record<string, unknown>).map(([k, v]) => [
         k,
-        CAMPOS_REDACTADOS.has(k) ? "[redactado]" : redactar(v, profundidad + 1),
+        CAMPOS_REDACTADOS.has(k) || /base64|imagen|foto|bytes|datauri/i.test(k)
+          ? "[redactado]"
+          : redactar(v, profundidad + 1),
       ]),
     );
   }
@@ -61,6 +63,7 @@ const VENTANA_DENEGADOS_MS = 5 * 60_000;
 
 export async function registrarInvocacion(prisma: PrismaClient, registro: RegistroInvocacion): Promise<void> {
   try {
+    const parametrosRedactados = redactar(registro.parametros ?? null);
     await prisma.mcpInvocacion.create({
       data: {
         conexionId: registro.conexionId,
@@ -72,8 +75,8 @@ export async function registrarInvocacion(prisma: PrismaClient, registro: Regist
         resultado: registro.resultado,
         codigo: registro.codigo ?? null,
         mensaje: registro.mensaje ? registro.mensaje.slice(0, 500) : null,
-        parametrosHash: hashCanonico(registro.parametros ?? null),
-        parametrosRedactados: (redactar(registro.parametros ?? null) ?? undefined) as Prisma.InputJsonValue,
+        parametrosHash: hashCanonico(parametrosRedactados),
+        parametrosRedactados: (parametrosRedactados ?? undefined) as Prisma.InputJsonValue,
         entidadesAfectadas: registro.entidades?.length
           ? (registro.entidades.map((e) => ({ tipo: e.tipo, id: String(e.id) })) as Prisma.InputJsonValue)
           : undefined,

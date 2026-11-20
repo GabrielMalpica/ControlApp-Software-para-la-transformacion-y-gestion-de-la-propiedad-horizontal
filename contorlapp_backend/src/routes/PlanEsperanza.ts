@@ -14,6 +14,9 @@ router.use(authRequired);
 router.get("/conjuntos/:nit/config", requirePermission("plan_esperanza.acceso", "plan_esperanza.configurar"), requireConjuntoScope("nit"), ctrl.getConfig);
 router.put("/conjuntos/:nit/config", requirePermission("plan_esperanza.configurar"), requireConjuntoScope("nit"), ctrl.updateConfig);
 
+router.get("/conjuntos/:nit/cronologia", requirePermission("plan_esperanza.acceso"), requireConjuntoScope("nit"), ctrl.getCronologia);
+router.get("/conjuntos/:nit/ciclos/:id/informe", requirePermission("plan_esperanza.acceso"), requireConjuntoScope("nit"), ctrl.obtenerInformeCiclo);
+
 router.post("/conjuntos/:nit/iniciar", requirePermission("plan_esperanza.acceso"), requireConjuntoScope("nit"), ctrl.iniciarPlan);
 router.get("/conjuntos/:nit/plan-activo", requirePermission("plan_esperanza.acceso"), requireConjuntoScope("nit"), ctrl.getPlanActivo);
 router.get("/conjuntos/:nit/planes", requirePermission("plan_esperanza.acceso"), requireConjuntoScope("nit"), ctrl.listarPlanes);

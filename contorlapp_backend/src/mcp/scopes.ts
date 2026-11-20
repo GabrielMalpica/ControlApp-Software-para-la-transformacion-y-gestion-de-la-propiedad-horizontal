@@ -32,6 +32,8 @@ export const CATALOGO_SCOPES: DefinicionScope[] = [
   { scope: "compromisos:read", titulo: "Ver compromisos", descripcion: "Compromisos y PQRS por conjunto.", nivel: "lectura" },
   { scope: "compromisos:write", titulo: "Crear compromisos", descripcion: "Crear compromisos de un conjunto.", nivel: "escritura", incluye: ["compromisos:read"] },
   { scope: "reportes:read", titulo: "Ver indicadores", descripcion: "Indicadores de tareas por periodo.", nivel: "lectura" },
+  { scope: "plan_esperanza:read", titulo: "Consultar Plan Esperanza", descripcion: "Cronología contractual, fases y progreso de los conjuntos en alcance.", nivel: "lectura" },
+  { scope: "plan_esperanza:write", titulo: "Actualizar Plan Esperanza", descripcion: "Guardar evaluaciones y evidencias con confirmación del gerente.", nivel: "escritura", incluye: ["plan_esperanza:read"] },
 ];
 
 const POR_SCOPE = new Map(CATALOGO_SCOPES.map((item) => [item.scope, item]));

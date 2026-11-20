@@ -42,6 +42,38 @@ const DiagnosticoIdParam = z.object({
 });
 
 export class PlanEsperanzaController {
+  getCronologia: RequestHandler = async (req, res, next) => {
+    try {
+      const { nit } = NitParam.parse(req.params);
+      res.json(await service.obtenerCronologia(nit));
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  obtenerInformeCiclo: RequestHandler = async (req, res, next) => {
+    try {
+      const { nit } = NitParam.parse(req.params);
+      const { id } = PlanIdParam.parse(req.params);
+      const { desde, hasta } = z.object({
+        desde: z.coerce.number().int().min(1).max(6).optional(),
+        hasta: z.coerce.number().int().min(1).max(6).optional(),
+      }).parse(req.query);
+      if (desde && hasta && desde > hasta) {
+        res.status(400).json({ error: "La fase inicial no puede ser posterior a la fase final." });
+        return;
+      }
+      const informe = await service.obtenerInformeFases(id, desde, hasta, nit);
+      if (!informe) {
+        res.status(404).json({ error: "Ciclo no encontrado." });
+        return;
+      }
+      res.json(informe);
+    } catch (err) {
+      next(err);
+    }
+  };
+
   getConfig: RequestHandler = async (req, res, next) => {
     try {
       const { nit } = NitParam.parse(req.params);

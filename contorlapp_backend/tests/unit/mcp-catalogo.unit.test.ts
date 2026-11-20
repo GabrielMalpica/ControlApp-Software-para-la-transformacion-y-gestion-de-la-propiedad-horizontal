@@ -113,6 +113,9 @@ describe("catalogo de herramientas MCP", () => {
   "previsualizar_publicar_cronograma|cronograma:publicar|ALTO_RIESGO",
   "confirmar_operacion|-|ESCRITURA",
   "estado_confirmacion|-|LECTURA",
+  "consultar_plan_esperanza|plan_esperanza:read|LECTURA",
+  "previsualizar_guardado_plan_esperanza|plan_esperanza:write|ESCRITURA",
+  "adjuntar_foto_plan_esperanza|plan_esperanza:write|ESCRITURA",
 ]
 `);
   });

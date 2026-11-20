@@ -2,6 +2,12 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import fs from "fs";
 import { prisma } from "../db/prisma";
 import { uploadPlanEsperanzaFoto } from "../utils/drive_plan_esperanza";
+import {
+  construirRangosContrato,
+  inicioMesEnBogota,
+  programarFasesPlanEsperanza,
+  sumarAnnosContrato,
+} from "../utils/planEsperanzaCronologia";
 
 type ChecklistItem = {
   texto: string;
@@ -56,6 +62,18 @@ function parseChecklist(value: Prisma.JsonValue | null | undefined): ChecklistIt
   return value.map(normalizeChecklistItem).filter((item): item is ChecklistItem => item != null);
 }
 
+function diagnosticoTieneContenido(diagnostico: {
+  valoracion: number | null;
+  observaciones: string | null;
+  urlFoto: string | null;
+  checklist: ChecklistItem[];
+}) {
+  return diagnostico.valoracion != null ||
+    !!diagnostico.observaciones?.trim() ||
+    !!diagnostico.urlFoto ||
+    diagnostico.checklist.length > 0;
+}
+
 function obtenerElementosHoja(prisma: PrismaClient, conjuntoId: string) {
   return prisma.$queryRaw<ElementoHoja[]>`
     SELECT
@@ -83,6 +101,203 @@ export class PlanEsperanzaService {
     this.prisma = client ?? prisma;
   }
 
+  async obtenerCronologia(conjuntoId: string, hoy = new Date()) {
+    const conjunto = await this.prisma.conjunto.findUnique({
+      where: { nit: conjuntoId },
+      select: {
+        nit: true,
+        nombre: true,
+        fechaInicioContrato: true,
+        fechaFinContrato: true,
+      },
+    });
+    if (!conjunto) throw Object.assign(new Error("Conjunto no encontrado."), { status: 404 });
+    if (!conjunto.fechaInicioContrato) {
+      throw Object.assign(new Error("Registre la fecha de inicio del contrato para crear el Plan Esperanza."), {
+        status: 409,
+        code: "FECHA_CONTRATO_REQUERIDA",
+      });
+    }
+
+    const inicioContrato = conjunto.fechaInicioContrato;
+    if (conjunto.fechaFinContrato && conjunto.fechaFinContrato < inicioContrato) {
+      throw Object.assign(new Error("La fecha de fin del contrato es anterior a la fecha de inicio."), {
+        status: 409,
+        code: "FECHAS_CONTRATO_INVALIDAS",
+      });
+    }
+    const finContrato = conjunto.fechaFinContrato ?? new Date(
+      sumarAnnosContrato(inicioContrato, 1).getTime() - 24 * 60 * 60 * 1000,
+    );
+    const rangos = construirRangosContrato(inicioContrato, conjunto.fechaFinContrato, hoy);
+    const hoyMes = inicioMesEnBogota(hoy);
+
+    for (const rango of rangos) {
+      const ciclo = await this.prisma.planEsperanzaCiclo.upsert({
+        where: { conjuntoId_fechaInicio: { conjuntoId, fechaInicio: rango.inicio } },
+        update: {},
+        create: {
+          conjuntoId,
+          fechaInicioContrato: rango.inicio,
+          fechaFinContrato: rango.fin,
+          fechaInicio: rango.inicio,
+          fechaFin: rango.fin,
+        },
+      });
+      const fases = programarFasesPlanEsperanza(rango.inicio, rango.fin);
+      const hojas = await obtenerElementosHoja(this.prisma, conjuntoId);
+      for (const fase of fases) {
+        const plan = await this.prisma.planEsperanza.upsert({
+          where: { cicloId_faseClave: { cicloId: ciclo.id, faseClave: fase.clave } },
+          update: {},
+          create: {
+            conjuntoId,
+            cicloId: ciclo.id,
+            faseClave: fase.clave,
+            mesObjetivo: fase.mesObjetivo,
+            fechaProgramada: fase.fechaProgramada,
+            fechaInicio: fase.fechaProgramada,
+            completado: false,
+          },
+        });
+        if (hojas.length) {
+          await this.prisma.diagnosticoArea.createMany({
+            data: hojas.map((hoja) => ({ planEsperanzaId: plan.id, elementoId: hoja.id })),
+            skipDuplicates: true,
+          });
+        }
+      }
+    }
+
+    await this.adaptarPlanesAnteriores(conjuntoId, rangos);
+
+    const ciclos = await this.prisma.planEsperanzaCiclo.findMany({
+      where: { conjuntoId },
+      include: {
+        fases: {
+          orderBy: { id: "asc" },
+          include: {
+            _count: { select: { diagnosticos: true } },
+            diagnosticos: {
+              include: {
+                elemento: { include: { padre: true, ubicacion: true } },
+              },
+              orderBy: [
+                { elemento: { ubicacion: { nombre: "asc" } } },
+                { elemento: { padre: { nombre: "asc" } } },
+                { elemento: { nombre: "asc" } },
+              ],
+            },
+          },
+        },
+      },
+      orderBy: { fechaInicio: "desc" },
+    });
+
+    return {
+      conjuntoId,
+      conjuntoNombre: conjunto.nombre,
+      fechaInicioContrato: inicioContrato,
+      fechaFinContrato: conjunto.fechaFinContrato ?? finContrato,
+      ciclos: ciclos.map((ciclo) => ({
+        id: ciclo.id,
+        fechaInicio: ciclo.fechaInicio,
+        fechaFin: ciclo.fechaFin,
+        fases: ciclo.fases.map((fase) => {
+          const diagnosticos = fase.diagnosticos.map((d) => ({
+            id: d.id,
+            elementoId: d.elementoId,
+            elementoNombre: d.elemento.nombre,
+            ubicacionId: d.elemento.ubicacionId,
+            ubicacionNombre: d.elemento.ubicacion.nombre,
+            subzonaNombre: d.elemento.padre?.nombre ?? null,
+            urlFoto: d.urlFoto,
+            valoracion: d.valoracion,
+            observaciones: d.observaciones,
+            checklist: parseChecklist(d.checklist),
+            creadoEn: d.creadoEn,
+          }));
+          const disponible = !!fase.fechaProgramada && fase.fechaProgramada <= hoyMes;
+          const evaluadas = diagnosticos.filter((d) => diagnosticoTieneContenido(d)).length;
+          return {
+            id: fase.id,
+            clave: fase.faseClave,
+            mesObjetivo: fase.mesObjetivo,
+            fechaProgramada: fase.fechaProgramada,
+            fechaInicio: fase.fechaInicio,
+            fechaFin: fase.fechaFin,
+            completado: fase.completado,
+            disponible,
+            estado: fase.completado
+              ? "COMPLETADA"
+              : !disponible
+                ? "BLOQUEADA"
+                : fase.fechaProgramada && fase.fechaProgramada < hoyMes
+                  ? "ATRASADA"
+                  : evaluadas > 0
+                    ? "EN_PROGRESO"
+                    : "PENDIENTE",
+            totalAreas: fase._count.diagnosticos,
+            areasEvaluadas: evaluadas,
+            diagnosticos,
+          };
+        }),
+      })),
+    };
+  }
+
+  async obtenerInformeFases(cicloId: number, desde?: number, hasta?: number, conjuntoId?: string) {
+    const ciclo = await this.prisma.planEsperanzaCiclo.findUnique({
+      where: { id: cicloId, ...(conjuntoId ? { conjuntoId } : {}) },
+      include: {
+        conjunto: { select: { nombre: true, nit: true } },
+        fases: {
+          include: {
+            diagnosticos: {
+              include: { elemento: { include: { padre: true, ubicacion: true } } },
+            },
+          },
+          orderBy: { id: "asc" },
+        },
+      },
+    });
+    if (!ciclo) return null;
+    const fasesOrdenadas = [...ciclo.fases].sort((a, b) => (a.mesObjetivo ?? 0) - (b.mesObjetivo ?? 0));
+    const fases = fasesOrdenadas.slice(Math.max(0, (desde ?? 1) - 1), hasta ?? fasesOrdenadas.length);
+    return {
+      cicloId: ciclo.id,
+      conjuntoNombre: ciclo.conjunto.nombre,
+      conjuntoNit: ciclo.conjunto.nit,
+      fechaInicio: ciclo.fechaInicio,
+      fechaFin: ciclo.fechaFin,
+      fases: fases.map((fase) => ({
+        id: fase.id,
+        clave: fase.faseClave,
+        mesObjetivo: fase.mesObjetivo,
+        fechaProgramada: fase.fechaProgramada,
+        fechaFin: fase.fechaFin,
+        completado: fase.completado,
+        totalAreas: fase.diagnosticos.length,
+        areasEvaluadas: fase.diagnosticos.filter((d) => diagnosticoTieneContenido({
+          valoracion: d.valoracion,
+          observaciones: d.observaciones,
+          urlFoto: d.urlFoto,
+          checklist: parseChecklist(d.checklist),
+        })).length,
+        diagnosticos: fase.diagnosticos.map((d) => ({
+          elementoId: d.elementoId,
+          elementoNombre: d.elemento.nombre,
+          ubicacionNombre: d.elemento.ubicacion.nombre,
+          subzonaNombre: d.elemento.padre?.nombre ?? null,
+          urlFoto: d.urlFoto,
+          valoracion: d.valoracion,
+          observaciones: d.observaciones,
+          checklist: parseChecklist(d.checklist),
+        })),
+      })),
+    };
+  }
+
   async obtenerConfig(conjuntoId: string) {
     let config = await this.prisma.planEsperanzaConfig.findUnique({
       where: { conjuntoId },
@@ -108,6 +323,27 @@ export class PlanEsperanzaService {
     mantenerEvidencias?: boolean,
     planAnteriorId?: number
   ) {
+    const conjunto = await this.prisma.conjunto.findUnique({
+      where: { nit: conjuntoId },
+      select: { fechaInicioContrato: true },
+    });
+    if (conjunto?.fechaInicioContrato) {
+      const cronologia = await this.obtenerCronologia(conjuntoId);
+      const fases = cronologia.ciclos
+        .slice()
+        .sort((a, b) => a.fechaInicio.getTime() - b.fechaInicio.getTime())
+        .flatMap((ciclo) => ciclo.fases);
+      const fase = fases.find((item) => item.disponible && !item.completado) ?? fases[0];
+      if (!fase) {
+        throw Object.assign(new Error("No fue posible generar las fases del contrato."), {
+          status: 409,
+          code: "PLAN_CONTRATO_SIN_FASES",
+        });
+      }
+      // Compatibilidad con clientes anteriores que aún llaman a /iniciar.
+      // El plan se crea desde el contrato y nunca desde la fecha de este clic.
+      return fase;
+    }
     const hojas = await obtenerElementosHoja(this.prisma, conjuntoId);
 
     const plan = await this.prisma.planEsperanza.create({
@@ -170,9 +406,89 @@ export class PlanEsperanzaService {
     return this.obtenerPlanActivo(conjuntoId);
   }
 
+  private async adaptarPlanesAnteriores(
+    conjuntoId: string,
+    rangos: Array<{ inicio: Date; fin: Date }>,
+  ) {
+    if (!rangos.length) return;
+    const anteriores = await this.prisma.planEsperanza.findMany({
+      where: { conjuntoId, cicloId: null },
+      include: { diagnosticos: true },
+      orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
+    });
+
+    for (const anterior of anteriores) {
+      const rango = rangos.find(
+        (item) => anterior.fechaInicio >= item.inicio && anterior.fechaInicio <= item.fin,
+      ) ?? (anterior.fechaInicio < rangos[0].inicio ? rangos[0] : rangos[rangos.length - 1]);
+      const hitos = programarFasesPlanEsperanza(rango.inicio, rango.fin);
+      const hito = hitos.reduce((mejor, actual) =>
+        Math.abs(actual.fechaProgramada.getTime() - anterior.fechaInicio.getTime()) <
+          Math.abs(mejor.fechaProgramada.getTime() - anterior.fechaInicio.getTime())
+          ? actual
+          : mejor,
+      );
+      const ciclo = await this.prisma.planEsperanzaCiclo.findUnique({
+        where: { conjuntoId_fechaInicio: { conjuntoId, fechaInicio: rango.inicio } },
+      });
+      if (!ciclo) continue;
+      const destino = await this.prisma.planEsperanza.findUnique({
+        where: { cicloId_faseClave: { cicloId: ciclo.id, faseClave: hito.clave } },
+      });
+      if (!destino) continue;
+
+      await this.prisma.$transaction(async (tx) => {
+        const planActual = await tx.planEsperanza.findUnique({
+          where: { id: anterior.id },
+          include: { diagnosticos: true },
+        });
+        if (!planActual) return;
+        for (const diagnostico of planActual.diagnosticos) {
+          const existente = await tx.diagnosticoArea.findUnique({
+            where: {
+              planEsperanzaId_elementoId: {
+                planEsperanzaId: destino.id,
+                elementoId: diagnostico.elementoId,
+              },
+            },
+          });
+          if (!existente) {
+            await tx.diagnosticoArea.create({
+              data: {
+                planEsperanzaId: destino.id,
+                elementoId: diagnostico.elementoId,
+                urlFoto: diagnostico.urlFoto,
+                valoracion: diagnostico.valoracion,
+                observaciones: diagnostico.observaciones,
+                checklist: diagnostico.checklist ?? Prisma.JsonNull,
+                creadoEn: diagnostico.creadoEn,
+              },
+            });
+            continue;
+          }
+          const data: Prisma.DiagnosticoAreaUpdateInput = {};
+          if (existente.urlFoto == null && diagnostico.urlFoto != null) data.urlFoto = diagnostico.urlFoto;
+          if (existente.valoracion == null && diagnostico.valoracion != null) data.valoracion = diagnostico.valoracion;
+          if (existente.observaciones == null && diagnostico.observaciones != null) data.observaciones = diagnostico.observaciones;
+          if (existente.checklist == null && diagnostico.checklist != null) data.checklist = diagnostico.checklist;
+          if (Object.keys(data).length) {
+            await tx.diagnosticoArea.update({ where: { id: existente.id }, data });
+          }
+        }
+        if (planActual.completado && !destino.completado) {
+          await tx.planEsperanza.update({
+            where: { id: destino.id },
+            data: { completado: true, fechaFin: planActual.fechaFin },
+          });
+        }
+        await tx.planEsperanza.delete({ where: { id: planActual.id } });
+      });
+    }
+  }
+
   async obtenerPlanActivo(conjuntoId: string) {
     const plan = await this.prisma.planEsperanza.findFirst({
-      where: { conjuntoId, completado: false },
+      where: { conjuntoId, cicloId: null, completado: false },
       orderBy: { fechaInicio: "desc" },
       include: {
         diagnosticos: {
@@ -221,7 +537,7 @@ export class PlanEsperanzaService {
 
   async listarPlanes(conjuntoId: string) {
     const planes = await this.prisma.planEsperanza.findMany({
-      where: { conjuntoId },
+      where: { conjuntoId, cicloId: null },
       orderBy: { fechaInicio: "desc" },
       include: {
         _count: { select: { diagnosticos: true } },
@@ -278,6 +594,20 @@ export class PlanEsperanzaService {
       conjuntoNombre?: string | null;
     }
   ) {
+    const actual = await this.prisma.diagnosticoArea.findUnique({
+      where: { id: diagnosticoId },
+      include: { planEsperanza: { select: { fechaProgramada: true, cicloId: true } } },
+    });
+    if (actual?.planEsperanza.cicloId && actual.planEsperanza.fechaProgramada) {
+      const hoy = new Date();
+      const hoyMes = inicioMesEnBogota(hoy);
+      if (actual.planEsperanza.fechaProgramada > hoyMes) {
+        throw Object.assign(new Error("Esta fase se habilita en el mes programado."), {
+          status: 409,
+          code: "FASE_BLOQUEADA",
+        });
+      }
+    }
     const updateData: {
       valoracion?: number | null;
       observaciones?: string | null;
@@ -332,6 +662,38 @@ export class PlanEsperanzaService {
   }
 
   async finalizarPlan(planId: number) {
+    const existente = await this.prisma.planEsperanza.findUnique({
+      where: { id: planId },
+      select: { fechaProgramada: true, cicloId: true },
+    });
+    if (existente?.cicloId && existente.fechaProgramada) {
+      const hoy = new Date();
+      const hoyMes = inicioMesEnBogota(hoy);
+      if (existente.fechaProgramada > hoyMes) {
+        throw Object.assign(new Error("Esta fase se habilita en el mes programado."), {
+          status: 409,
+          code: "FASE_BLOQUEADA",
+        });
+      }
+    }
+    if (existente?.cicloId) {
+      const diagnosticos = await this.prisma.diagnosticoArea.findMany({
+        where: { planEsperanzaId: planId },
+        select: { valoracion: true, observaciones: true, urlFoto: true, checklist: true },
+      });
+      const pendientes = diagnosticos.filter((d) => !diagnosticoTieneContenido({
+        valoracion: d.valoracion,
+        observaciones: d.observaciones,
+        urlFoto: d.urlFoto,
+        checklist: parseChecklist(d.checklist),
+      })).length;
+      if (pendientes) {
+        throw Object.assign(new Error(`Faltan ${pendientes} área(s) por evaluar. Guarda los avances y completa la fase más tarde.`), {
+          status: 409,
+          code: "FASE_INCOMPLETA",
+        });
+      }
+    }
     return this.prisma.planEsperanza.update({
       where: { id: planId },
       data: {
@@ -434,6 +796,7 @@ export class PlanEsperanzaService {
     const planes = await this.prisma.planEsperanza.findMany({
       where: {
         conjuntoId,
+        cicloId: null,
         ...(planIds?.length ? { id: { in: planIds } } : {}),
       },
       orderBy: { fechaInicio: "asc" },
@@ -542,7 +905,7 @@ export class PlanEsperanzaService {
     mantenerEvidencias: boolean
   ) {
     const planActivo = await this.prisma.planEsperanza.findFirst({
-      where: { conjuntoId, completado: false },
+      where: { conjuntoId, cicloId: null, completado: false },
       orderBy: { fechaInicio: "desc" },
     });
 
@@ -562,7 +925,7 @@ export class PlanEsperanzaService {
 
   async verificarZonasNuevas(conjuntoId: string) {
     const planActivo = await this.prisma.planEsperanza.findFirst({
-      where: { conjuntoId, completado: false },
+      where: { conjuntoId, cicloId: null, completado: false },
       orderBy: { fechaInicio: "desc" },
     });
 

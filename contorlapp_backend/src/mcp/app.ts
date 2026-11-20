@@ -49,7 +49,8 @@ export function crearAppMcp(deps: DependenciasOAuth & { prisma: PrismaClient; co
     limit: 600,
     key: (req) => req.ip ?? "sin-ip",
   });
-  app.all("/mcp", limiteMcp, express.json({ limit: "1mb" }), montarMcp(deps));
+  // El limite admite una foto MCP Base64 de hasta 4 MB (≈5.4 MB en JSON).
+  app.all("/mcp", limiteMcp, express.json({ limit: "6mb" }), montarMcp(deps));
 
   const manejarError: ErrorRequestHandler = (err, req, res, _next) => {
     console.error("[mcp-error]", {

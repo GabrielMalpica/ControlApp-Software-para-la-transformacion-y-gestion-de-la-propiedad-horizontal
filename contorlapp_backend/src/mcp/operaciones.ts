@@ -6,6 +6,7 @@
 import * as conjuntos from "../aplicacion/conjuntos";
 import * as operacion from "../aplicacion/operacion";
 import * as personal from "../aplicacion/personal";
+import * as planEsperanza from "../aplicacion/planEsperanza";
 import type { OperacionConfirmable } from "./confirmaciones";
 
 /** A partir de este tamano, un lote de operarios necesita aprobacion en ControlApp. */
@@ -84,8 +85,18 @@ const publicarCronograma: OperacionConfirmable<{ conjuntoId: string; anio: numbe
   entidades: (p) => [{ tipo: "CronogramaPeriodo", id: `${p.conjuntoId}:${p.anio}-${p.mes}` }],
 };
 
+const guardarPlanEsperanza: OperacionConfirmable<{ lotes: planEsperanza.LotePlanEsperanza[] }> = {
+  nombre: "guardar_plan_esperanza",
+  titulo: "Guardar fases del Plan Esperanza",
+  scope: "plan_esperanza:write",
+  requiereAprobacionHumana: (p) => new Set(p.lotes.map((lote) => lote.conjuntoId)).size > 10,
+  previsualizar: (prisma, ctx, p) => planEsperanza.previsualizarGuardadoPlanEsperanza(prisma, ctx, p.lotes),
+  ejecutar: (prisma, ctx, p) => planEsperanza.guardarPlanEsperanza(prisma, ctx, p.lotes),
+  entidades: (p) => [...new Set(p.lotes.map((lote) => lote.conjuntoId))].map((id) => ({ tipo: "PlanEsperanzaCiclo", id })),
+};
+
 export const OPERACIONES_CONFIRMABLES: ReadonlyMap<string, OperacionConfirmable> = new Map(
-  [trasladarOperario, asignarPlaza, liberarPlaza, crearOperarios, crearConjunto, publicarCronograma].map(
+  [trasladarOperario, asignarPlaza, liberarPlaza, crearOperarios, crearConjunto, publicarCronograma, guardarPlanEsperanza].map(
     (op) => [op.nombre, op as OperacionConfirmable],
   ),
 );
