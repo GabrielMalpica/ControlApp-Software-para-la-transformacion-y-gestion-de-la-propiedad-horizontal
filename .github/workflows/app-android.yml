@@ -1,7 +1,8 @@
 # Compila la web y el APK de Android en la misma versión y los publica en
 # Hostinger (ver docs/app-android-sin-conexion.md, "Publicar una versión").
 # Un clic: Actions → "App Android y web" → Run workflow. El versionCode se
-# calcula solo (el publicado + 1): no hay que editar pubspec.yaml.
+# calcula solo (el publicado + 1, nunca menos que el número de la ejecución):
+# no hay que editar pubspec.yaml.
 #
 # Secretos (Settings → Secrets and variables → Actions):
 #   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS,
@@ -141,14 +142,18 @@ jobs:
           echo "configurado=true" >> "$GITHUB_OUTPUT"
           echo "Se subirá build/web a Hostinger por FTP al final."
 
-      # versionCode = el publicado + 1 (o el de pubspec.yaml si es mayor):
-      # los celulares solo se actualizan si el número sube.
+      # versionCode = el mayor entre el publicado + 1, el de pubspec.yaml y el
+      # número de esta ejecución: los celulares solo se actualizan si el número
+      # sube. El número de la ejecución cubre el caso en que el android.json
+      # publicado desaparece (pasó el 20 nov: se volvió a compilar la 2, que los
+      # celulares ya tenían).
       - name: Calcular versión
         id: version
         run: >-
           node scripts/empaquetar-android.js --solo-revisar --auto-version
           --base-url "$DESCARGAS_BASE_URL"
           --minima "$MINIMA_VERSION_CODE"
+          --version-code-minimo "$GITHUB_RUN_NUMBER"
           --anterior "${DESCARGAS_BASE_URL%/}/descargas/android.json"
 
       - uses: actions/setup-java@v6
@@ -270,8 +275,12 @@ jobs:
 
       # Primero todo menos descargas/android.json: si la subida se corta, los
       # celulares no ven una versión cuyo APK aún no está en el servidor.
+      # El FTP de Hostinger a veces corta la conexión (ECONNRESET): un
+      # reintento después de una pausa. Lo ya subido no se pierde.
       - name: Subir a Hostinger por FTP
+        id: ftp_web
         if: steps.ftp.outputs.configurado == 'true'
+        continue-on-error: true
         uses: SamKirkland/FTP-Deploy-Action@110f9186c050f71550953127052e77650219c287 # v4.4.0
         with:
           server: ${{ secrets.HOSTINGER_FTP_SERVER }}
@@ -287,17 +296,14 @@ jobs:
             **/node_modules/**
             descargas/android.json
 
-      - name: Preparar manifiesto para subirlo de último
-        if: steps.ftp.outputs.configurado == 'true'
+      - name: Esperar antes de reintentar la subida
+        if: steps.ftp_web.outcome == 'failure'
         run: |
-          set -euo pipefail
-          mkdir -p build/publicar-manifiesto/descargas
-          cp build/web/descargas/android.json build/publicar-manifiesto/descargas/android.json
+          echo "::warning::La subida por FTP falló; se reintenta una vez en 30 s."
+          sleep 30
 
-      # Estado aparte: este paso solo conoce android.json y nunca borra lo
-      # que subió el paso anterior.
-      - name: Subir android.json (aviso de versión nueva)
-        if: steps.ftp.outputs.configurado == 'true'
+      - name: Subir a Hostinger por FTP (reintento)
+        if: steps.ftp_web.outcome == 'failure'
         uses: SamKirkland/FTP-Deploy-Action@110f9186c050f71550953127052e77650219c287 # v4.4.0
         with:
           server: ${{ secrets.HOSTINGER_FTP_SERVER }}
@@ -306,8 +312,28 @@ jobs:
           server-dir: ${{ secrets.HOSTINGER_FTP_DIR }}
           protocol: ${{ vars.HOSTINGER_FTP_PROTOCOL || 'ftps' }}
           security: ${{ vars.HOSTINGER_FTP_SECURITY || 'strict' }}
-          local-dir: controlapp_frontend/build/publicar-manifiesto/
-          state-name: .ftp-deploy-manifiesto.json
+          local-dir: controlapp_frontend/build/web/
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            descargas/android.json
+
+      # android.json va de último y aparte, con curl. Antes iba con
+      # FTP-Deploy-Action y un archivo de estado propio: el 20 nov ese estado y
+      # android.json ya no estaban en el servidor, la acción intentó "primera
+      # publicación" y Hostinger cortó la conexión (ECONNRESET). Para un solo
+      # archivo no hace falta estado, y curl reintenta con una conexión nueva.
+      - name: Subir android.json (aviso de versión nueva)
+        if: steps.ftp.outputs.configurado == 'true'
+        env:
+          HOSTINGER_FTP_SERVER: ${{ secrets.HOSTINGER_FTP_SERVER }}
+          HOSTINGER_FTP_USER: ${{ secrets.HOSTINGER_FTP_USER }}
+          HOSTINGER_FTP_PASSWORD: ${{ secrets.HOSTINGER_FTP_PASSWORD }}
+          HOSTINGER_FTP_DIR: ${{ secrets.HOSTINGER_FTP_DIR }}
+          FTP_PROTOCOLO: ${{ vars.HOSTINGER_FTP_PROTOCOL || 'ftps' }}
+          FTP_SEGURIDAD: ${{ vars.HOSTINGER_FTP_SECURITY || 'strict' }}
+        run: bash scripts/subir-android-json.sh build/web/descargas/android.json
 
       # Comprueba que lo publicado es lo que se acaba de compilar (el CDN de
       # Hostinger puede tardar un poco: se reintenta).

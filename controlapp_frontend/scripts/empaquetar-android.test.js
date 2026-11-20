@@ -205,6 +205,37 @@ test("--auto-version usa el publicado + 1 y lo deja en GITHUB_OUTPUT", async () 
   assert.equal((await correr(raiz, ["--solo-revisar", "--auto-version", "--anterior", anterior, "--minima", "13"])).codigo, 0);
 });
 
+test("--version-code-minimo: sin android.json publicado no repite un número viejo", async () => {
+  const raiz = proyecto({ apk: null });
+  const anterior = path.join(raiz, "no-existe.json");
+  const salida = path.join(raiz, "github-output.txt");
+  // Alguien borró el android.json publicado: sin el mínimo saldría el 7 de pubspec.
+  let r = await correr(raiz, ["--solo-revisar", "--auto-version", "--anterior", anterior, "--version-code-minimo", "9"], {
+    GITHUB_OUTPUT: salida,
+  });
+  assert.equal(r.codigo, 0, r.stderr);
+  assert.match(fs.readFileSync(salida, "utf8"), /^version_code=9$/m);
+
+  // Con android.json publicado manda el mayor: publicado + 1 o el mínimo.
+  fs.writeFileSync(anterior, JSON.stringify({ versionCode: 12 }));
+  const salida2 = path.join(raiz, "github-output-2.txt");
+  r = await correr(raiz, ["--solo-revisar", "--auto-version", "--anterior", anterior, "--version-code-minimo", "9"], {
+    GITHUB_OUTPUT: salida2,
+  });
+  assert.match(fs.readFileSync(salida2, "utf8"), /^version_code=13$/m);
+  const salida3 = path.join(raiz, "github-output-3.txt");
+  r = await correr(raiz, ["--solo-revisar", "--auto-version", "--anterior", anterior, "--version-code-minimo", "20"], {
+    GITHUB_OUTPUT: salida3,
+  });
+  assert.match(fs.readFileSync(salida3, "utf8"), /^version_code=20$/m);
+
+  // Menor que pubspec no baja nada; un valor que no es número falla.
+  assert.equal((await correr(raiz, ["--solo-revisar", "--version-code-minimo", "3"])).codigo, 0);
+  r = await correr(raiz, ["--solo-revisar", "--version-code-minimo", "x"]);
+  assert.notEqual(r.codigo, 0);
+  assert.match(r.stderr, /--version-code-minimo debe ser un número entero/);
+});
+
 test("--version-code reemplaza el de pubspec en el nombre y en android.json", async () => {
   const raiz = proyecto();
   const r = await correr(raiz, ["--version-code", "21"]);

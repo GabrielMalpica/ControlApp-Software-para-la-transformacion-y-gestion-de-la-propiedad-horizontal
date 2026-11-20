@@ -29,6 +29,11 @@
 //                      no hay que editar pubspec.yaml en cada publicación.
 //   --version-code <n> versionCode con el que se compiló (flutter build
 //                      --build-number); reemplaza el de pubspec.yaml.
+//   --version-code-minimo <n>  El versionCode nuevo nunca queda por debajo
+//                      (el workflow pasa el número de la ejecución): si alguien
+//                      borra el android.json publicado, --anterior no lo ve y
+//                      sin esto se volvería a publicar un número viejo que los
+//                      celulares ya tienen.
 //   --raiz <carpeta>   Carpeta del proyecto Flutter (por defecto la de este script).
 //   --apk <ruta>       APK compilado (por defecto build/app/outputs/flutter-apk/app-release.apk).
 //   --web <carpeta>    Build web (por defecto build/web).
@@ -155,6 +160,10 @@ async function main() {
   let versionCode = leida.versionCode;
   const forzado = opcion("--version-code");
   if (forzado !== undefined) versionCode = entero(forzado, "--version-code");
+  const minimoTexto = opcion("--version-code-minimo");
+  if (minimoTexto !== undefined && minimoTexto.trim() !== "") {
+    versionCode = Math.max(versionCode, entero(minimoTexto, "--version-code-minimo"));
+  }
   const autoVersion = process.argv.includes("--auto-version");
 
   const soloRevisar = process.argv.includes("--solo-revisar");
